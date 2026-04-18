@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+# Node
+node_modules/
+dist/
+.DS_Store
+
+# Logistics / Data
+amenities_cache/
+uploads/
+outputs/
+logs/
+data/india/
+data/srilanka/
+*.geojson
+*.xlsx
+*.csv
+
+# IDE
+.vscode/
+.idea/
+.gemini/
+.antigravity/
+.antigravityignore

@@ -1,0 +1,338 @@
+"""
+Agent 4 — Scoring / Feature Engineering Service
+Orchestrates the full pipeline:
+  1. Standardise uploaded store / request DataFrames
+  2. Amenity counting (via amenities_service)
+  3. Demographic mapping (nearest neighbour)
+  4. Competition & cannibalization analysis
+  5. Business-unit clustering (if provided)
+  6. RF model training → candidate prediction
+  7. Grid candidate generation (when no requests uploaded)
+Returns top_picks list + full results DataFrame.
+"""
+import io
+import uuid
+import numpy as np
+import pandas as pd
+import geopandas as gpd
+from pathlib import Path
+from scipy.optimize import minimize
+
+from app.config import (
+    get_state_config, BUFFER_RADIUS_M, GRID_STEP_DEG, TOP_N_LOCATIONS,
+)
+from app.models.rf_model import FranchiseModel
+from app.services.amenities_service import count_amenities_near_points
+from app.services.clustering_service import assign_business_units
+from app.utils import (
+    get_logger, haversine_vectorized, nearest_neighbor_index, safe_int, safe_float,
+)
+
+log = get_logger("scoring_service")
+
+# ─────────────────────────────────────────────────────────────
+# COLUMN NORMALISATION
+# ─────────────────────────────────────────────────────────────
+_RENAME_MAP = {
+    "store id":       "Store_ID",
+    "store name":     "Store_Name",
+    "name":           "Store_Name",
+    "customer name":  "Store_Name",
+    "address line 1": "Address",
+    "locality":       "Locality",
+    "latitude":       "Latitude",  "lat": "Latitude",
+    "longitude":      "Longitude", "lon": "Longitude", "long": "Longitude",
+    "sales":          "Sales",     "sales 2025": "Sales",
+    "returns":        "Returns",   "returns 2025": "Returns",
+}
+
+
+def standardise_df(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    df.columns = df.columns.astype(str).str.strip()
+    rename = {c: _RENAME_MAP[c.lower()] for c in df.columns if c.lower() in _RENAME_MAP}
+    df.rename(columns=rename, inplace=True)
+    for col in ("Latitude", "Longitude"):
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col].astype(str).str.replace(",", ""), errors="coerce")
+    if "Latitude" in df.columns and "Longitude" in df.columns:
+        df = df.dropna(subset=["Latitude", "Longitude"])
+        df = df[(df["Latitude"] != 0) | (df["Longitude"] != 0)]
+    return df.reset_index(drop=True)
+
+
+def parse_uploaded_df(file_bytes: bytes, filename: str) -> pd.DataFrame:
+    suffix = filename.rsplit(".", 1)[-1].lower()
+    buf = io.BytesIO(file_bytes)
+    try:
+        if suffix in ("xlsx", "xls"):
+            try:
+                df = pd.read_excel(buf, sheet_name="Franchise Data")
+            except Exception:
+                buf.seek(0)
+                df = pd.read_excel(buf)
+        else:
+            df = pd.read_csv(buf)
+    except Exception as e:
+        raise ValueError(f"Could not parse '{filename}': {e}") from e
+    return standardise_df(df)
+
+
+# ─────────────────────────────────────────────────────────────
+# FULL PIPELINE
+# ─────────────────────────────────────────────────────────────
+def run_pipeline(
+    country: str,
+    state: str,
+    stores_df: pd.DataFrame,
+    demographics_df: pd.DataFrame,
+    amenities_gdf: gpd.GeoDataFrame,
+    requests_df: pd.DataFrame | None = None,
+    bu_df: pd.DataFrame | None = None,
+    top_n: int = TOP_N_LOCATIONS,
+) -> dict:
+    """
+    Full scoring pipeline. Returns a results dict ready for the API response.
+    """
+    cfg = get_state_config(country, state)
+    has_bu = bu_df is not None and not bu_df.empty
+    log.info(f"[Pipeline] {country}/{state} | stores={len(stores_df)} "
+             f"| requests={len(requests_df) if requests_df is not None else 0} "
+             f"| BU={has_bu}")
+
+    # ── 1. Prepare stores ─────────────────────────────────────
+    stores_df = _add_adjusted_sales(stores_df)
+    stores_df = _enrich(stores_df, demographics_df, amenities_gdf, stores_df, cfg, is_store=True)
+    if has_bu:
+        stores_df = assign_business_units(stores_df, bu_df)
+
+    # ── 2. Prepare candidates ─────────────────────────────────
+    if requests_df is not None and not requests_df.empty:
+        cands_df = _enrich(requests_df.copy(), demographics_df, amenities_gdf,
+                           stores_df, cfg, is_store=False)
+        if has_bu:
+            cands_df = assign_business_units(cands_df, bu_df)
+    else:
+        cands_df = _generate_grid(cfg, demographics_df)
+        cands_df = _enrich(cands_df, demographics_df, amenities_gdf,
+                           stores_df, cfg, is_store=False)
+        if has_bu:
+            cands_df = assign_business_units(cands_df, bu_df)
+
+    # ── 3. Train RF model + predict ───────────────────────────
+    model = FranchiseModel()
+    train_metrics = model.train(stores_df, has_bu=has_bu)
+    log.info(f"[Pipeline] Model R²={train_metrics['r2']:.3f}")
+    
+    # Cap extreme demand values before scoring layer
+    if "Population" in cands_df.columns:
+        cands_df["Population"] = cands_df["Population"].clip(upper=500000)
+        
+    cands_df = model.predict(cands_df)
+
+    # ── 4. Apply BU weight multiplier ────────────────────────
+    if has_bu and "BU_Weight" in cands_df.columns:
+        cands_df["Final_Score"] = np.clip(
+            cands_df["Final_Score"] * cands_df["BU_Weight"] * 1.05,
+            0, 100
+        )
+        
+    # ── 5. Add Proximity Guardrail (Distance Penalty) ────────
+    def distance_penalty(d):
+        d = float(d) if pd.notnull(d) else 100.0
+        if d < 1.0: return 0.2
+        elif d < 2.0: return 0.5
+        elif d < 3.0: return 0.75
+        else: return 1.0
+
+    if "Nearest_Store_km" in cands_df.columns:
+        cands_df["Distance_Penalty"] = cands_df["Nearest_Store_km"].apply(distance_penalty)
+        cands_df["Is_Too_Close"] = cands_df["Nearest_Store_km"] < 1.0
+        cands_df["Adjusted_Final_Score"] = cands_df["Final_Score"] * cands_df["Distance_Penalty"]
+        cands_df["Final_Score"] = cands_df["Adjusted_Final_Score"]
+
+    cands_df = cands_df.sort_values("Final_Score", ascending=False).reset_index(drop=True)
+    top_df = cands_df.head(top_n)
+    
+    if len(top_df) < top_n:
+        log.warning(f"[Pipeline] Only found {len(top_df)} candidates. Requested top {top_n}.")
+
+    def _amenities_to_records(gdf):
+        if gdf is None or gdf.empty: return []
+        records = []
+        for idx, row in gdf.iterrows():
+            if not row.geometry or row.geometry.is_empty: continue
+            
+            # Handle non-point geometries (Polygons) by using their centroid
+            g = row.geometry
+            pt = g if g.geom_type == 'Point' else g.centroid
+            
+            cat = row.get("amenity") or row.get("shop") or row.get("leisure")
+            records.append({
+                "lat": safe_float(pt.y),
+                "lng": safe_float(pt.x),
+                "type": str(cat),
+                "name": str(row.get("name", "")),
+            })
+        return records
+
+    return {
+        "top_picks":      _to_records(top_df, "prediction"),
+        "all_candidates": _to_records(cands_df, "prediction"),
+        "stores":         _to_records(stores_df, "store"),
+        "requests":       _to_records(requests_df, "request") if requests_df is not None else [],
+        "business_units": _to_records(bu_df, "bu") if has_bu else [],
+        "amenities":      _amenities_to_records(amenities_gdf),
+        "kpis":           _compute_kpis(stores_df, top_df),
+        "model_metrics":  train_metrics,
+    }
+
+
+# ─────────────────────────────────────────────────────────────
+# FEATURE ENGINEERING
+# ─────────────────────────────────────────────────────────────
+def _enrich(df, demographics_df, amenities_gdf, stores_df, cfg, is_store):
+    df = count_amenities_near_points(df, amenities_gdf, buffer_m=BUFFER_RADIUS_M)
+    df = _map_demographics(df, demographics_df)
+    df = _competition_analysis(df, stores_df, is_store=is_store)
+    df = _cannibalization(df)
+    if cfg.get("default_kitchen"):
+        ck_lat, ck_lon = cfg["default_kitchen"]
+        df["Kitchen_Dist_km"] = haversine_vectorized(
+            df["Latitude"].values, df["Longitude"].values, ck_lat, ck_lon
+        )
+    else:
+        df["Kitchen_Dist_km"] = 0.0
+    return df
+
+
+def _map_demographics(df, demographics_df):
+    d_lats = demographics_df["Latitude"].values
+    d_lons = demographics_df["Longitude"].values
+    pop_col = "Population" if "Population" in demographics_df else demographics_df.columns[2]
+    d_pop = demographics_df[pop_col].values
+    inc_cols = [c for c in demographics_df.columns if "income" in c.lower()]
+    d_inc = demographics_df[inc_cols[0]].values if inc_cols else np.zeros(len(demographics_df))
+    pops, incs = [], []
+    for lat, lon in zip(df["Latitude"], df["Longitude"]):
+        idx, _ = nearest_neighbor_index(d_lats, d_lons, lat, lon)
+        pops.append(d_pop[idx])
+        incs.append(d_inc[idx])
+    df["Population"] = pd.to_numeric(pd.Series(pops), errors="coerce").fillna(0).values
+    df["Income"]     = pd.to_numeric(pd.Series(incs), errors="coerce").fillna(0).values
+    return df
+
+
+def _competition_analysis(df, stores_df, is_store):
+    s_lats  = stores_df["Latitude"].values
+    s_lons  = stores_df["Longitude"].values
+    s_names = stores_df["Store_Name"].values if "Store_Name" in stores_df.columns else np.array([""] * len(s_lats))
+    nd, nn, s2, s5 = [], [], [], []
+    for enum_i, (_, row) in enumerate(df.iterrows()):
+        dists = haversine_vectorized(s_lats, s_lons, row["Latitude"], row["Longitude"])
+        if is_store:
+            dists[enum_i] = np.inf
+        idx = int(np.argmin(dists)) if len(dists) else 0
+        nd.append(safe_float(dists[idx]) if len(dists) else 100.0)
+        nn.append(str(s_names[idx]) if len(s_names) else "")
+        s2.append(int(np.sum(dists <= 2.0)))
+        s5.append(int(np.sum(dists <= 5.0)))
+    df["Nearest_Store_km"]   = nd
+    df["Nearest_Store_Name"] = nn
+    df["stores_2km"]         = s2
+    df["stores_5km"]         = s5
+    return df
+
+
+def _cannibalization(df):
+    def _score(d):
+        if d < 1.0:   return 0.0
+        elif d < 3.0: return 0.3
+        elif d < 6.0: return 1.0
+        elif d < 10.: return 0.7
+        return 0.4
+    df["Cannibalization_Score"] = df["Nearest_Store_km"].apply(_score)
+    return df
+
+
+def _add_adjusted_sales(df):
+    if "Sales" not in df.columns:
+        df["Sales"] = 100_000.0
+    if "Returns" not in df.columns:
+        df["Returns"] = 0.0
+    df["Sales"]   = pd.to_numeric(df["Sales"],   errors="coerce").fillna(0)
+    df["Returns"] = pd.to_numeric(df["Returns"], errors="coerce").fillna(0)
+    df["Adjusted_Sales"] = df["Sales"] * (1 - df["Returns"] / df["Sales"].replace(0, 1))
+    return df
+
+
+def _generate_grid(cfg, demographics_df):
+    gb = cfg["grid_bounds"]  # [lat_min, lat_max, lon_min, lon_max]
+    lats = np.arange(gb[0], gb[1], GRID_STEP_DEG)
+    lons = np.arange(gb[2], gb[3], GRID_STEP_DEG)
+    import geopandas as gpd
+    from shapely.geometry import Point
+    demog_gdf = gpd.GeoDataFrame(
+        demographics_df,
+        geometry=gpd.points_from_xy(demographics_df.Longitude, demographics_df.Latitude),
+        crs="EPSG:4326",
+    )
+    land_buf = demog_gdf.geometry.buffer(0.1).unary_union
+    pts = [Point(lon, lat) for lat in lats for lon in lons if land_buf.contains(Point(lon, lat))]
+    rows = [{"Store_Name": f"Grid Candidate {i+1}", "Latitude": p.y, "Longitude": p.x}
+            for i, p in enumerate(pts)]
+    return pd.DataFrame(rows)
+
+
+# ─────────────────────────────────────────────────────────────
+# OUTPUT HELPERS
+# ─────────────────────────────────────────────────────────────
+def _to_records(df, kind: str):
+    if df is None or (hasattr(df, "empty") and df.empty):
+        return []
+    records = []
+    for _, row in df.iterrows():
+        r = {
+            "type":      kind,
+            "lat":       safe_float(row.get("Latitude")),
+            "lng":       safe_float(row.get("Longitude")),
+            "name":      str(row.get("Store_Name", row.get("Name", "Unknown"))),
+            "address":   str(row.get("Address", row.get("Locality", ""))),
+            "score":     safe_float(row.get("Final_Score", 0)),
+            "revenue":   safe_float(row.get("Predicted_Revenue", row.get("Sales", 0))),
+            "rev_lower": safe_float(row.get("Rev_Lower", 0)),
+            "rev_upper": safe_float(row.get("Rev_Upper", 0)),
+            "population":  safe_int(row.get("Population", 0)),
+            "income":      safe_float(row.get("Income", 0)),
+            "total_amenities": safe_int(row.get("Total_Amenities", 0)),
+            "cnt_food":     safe_int(row.get("cnt_food", 0)),
+            "cnt_retail":   safe_int(row.get("cnt_retail", 0)),
+            "cnt_education":safe_int(row.get("cnt_education", 0)),
+            "cnt_health":   safe_int(row.get("cnt_health", 0)),
+            "nearest_store":     str(row.get("Nearest_Store_Name", "")),
+            "nearest_store_km":  safe_float(row.get("Nearest_Store_km", 0)),
+            "bu_name":    str(row.get("BU_Name", "")),
+            "bu_dist_km": safe_float(row.get("BU_Dist_km", 0)),
+            # Explainability additions
+            "distance_penalty": safe_float(row.get("Distance_Penalty", 1.0)),
+            "is_too_close": bool(row.get("Is_Too_Close", False)),
+            "adjusted_final_score": safe_float(row.get("Adjusted_Final_Score", row.get("Final_Score", 0))),
+        }
+        records.append(r)
+    return records
+
+
+def _compute_kpis(stores_df, top_df):
+    sales = pd.to_numeric(stores_df.get("Sales", pd.Series([])), errors="coerce").fillna(0)
+    kpis = {
+        "total_stores":   len(stores_df),
+        "total_sales":    safe_float(sales.sum()),
+        "avg_sales":      safe_float(sales.mean()),
+        "max_sales":      safe_float(sales.max()),
+        "min_sales":      safe_float(sales.min()),
+        "top_candidates": len(top_df),
+        "avg_score":      safe_float(top_df["Final_Score"].mean()) if "Final_Score" in top_df else 0,
+        "max_score":      safe_float(top_df["Final_Score"].max()) if "Final_Score" in top_df else 0,
+        "avg_predicted_revenue": safe_float(top_df["Predicted_Revenue"].mean()) if "Predicted_Revenue" in top_df else 0,
+    }
+    return kpis
