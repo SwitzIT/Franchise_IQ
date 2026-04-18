@@ -1,15 +1,16 @@
 services:
-  # ─── BACKEND (Web Service via Docker) ────────────────────────
+  # ─── BACKEND ────────────────────────────────────────────────
   - type: web
     name: franchise-iq-backend
     env: docker
     region: ohio
-    plan: free # Change to 'starter' if you need a persistent disk
+    plan: free
     dockerContext: ./backend
     dockerfilePath: ./backend/Dockerfile
+
     envVars:
       - key: CORS_ORIGINS
-        value: "https://franchise-iq-frontend.onrender.com" # Update after frontend is live
+        value: "https://franchise-iq-frontend.onrender.com"
       - key: DATA_DIR
         value: "/app/data"
       - key: AMENITIES_DIR
@@ -20,26 +21,22 @@ services:
         value: "/app/outputs"
       - key: LOGS_DIR
         value: "/app/logs"
-    # Optional: Persistent Disk (Requires 'starter' plan or higher)
-    # disk:
-    #   name: data-storage
-    #   mountPath: /app/data
-    #   sizeGB: 1
 
-  # ─── FRONTEND (Static Site) ──────────────────────────────────
-  - type: static_site
+  # ─── FRONTEND ───────────────────────────────────────────────
+  - type: web
     name: franchise-iq-frontend
-    env: static
-    region: ohio
+    runtime: static
     rootDir: frontend
     buildCommand: npm install && npm run build
-    publishDir: dist
+    staticPublishPath: dist
+
     envVars:
       - key: VITE_API_URL
         fromService:
           name: franchise-iq-backend
           type: web
-          property: host
+          property: host   # ✅ FIXED
+
     routes:
       - type: rewrite
         source: /*
