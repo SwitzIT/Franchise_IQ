@@ -1,29 +1,21 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-venv/
+# Private / Temp
 .env
-
-# Node
 node_modules/
 dist/
-.DS_Store
-
-# Logistics / Data
-amenities_cache/
+__pycache__/
+venv/
 uploads/
 outputs/
 logs/
-data/india/
-data/srilanka/
-*.geojson
-*.xlsx
-*.csv
 
-# IDE
+# ALLOW the data and cache folders
+!data/
+!data/**
+!amenities_cache/
+!amenities_cache/**
+
+# IDEs
 .vscode/
 .idea/
 .gemini/
 .antigravity/
-.antigravityignore

@@ -7,10 +7,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgdal-dev gdal-bin libspatialindex-dev \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+# Copy backend app code
+COPY backend/ .
+
+# Copy demographics and map cache from the root
+COPY data/ ./data
+COPY amenities_cache/ ./amenities_cache
 
 EXPOSE 8000
 

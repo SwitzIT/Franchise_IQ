@@ -1,0 +1,15 @@
+# Frontend stuff
+frontend/node_modules/
+frontend/dist/
+
+# Python / Temp
+**/__pycache__/
+**/*.pyc
+.env
+venv/
+.git/
+.antigravity/
+.gemini/
+uploads/
+outputs/
+logs/
