@@ -27,7 +27,7 @@ services:
     #   sizeGB: 1
 
   # ─── FRONTEND (Static Site) ──────────────────────────────────
-  - type: static
+  - type: static_site
     name: franchise-iq-frontend
     env: static
     region: ohio
