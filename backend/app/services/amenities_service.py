@@ -35,9 +35,22 @@ def get_amenities(country: str, state: str) -> tuple[gpd.GeoDataFrame, bool]:
 
     if cache_path.exists():
         log.info(f"[Amenities] Cache hit → {cache_path}")
-        gdf = gpd.read_file(cache_path)
-        gdf = _ensure_crs(gdf)
-        return gdf, True
+        
+        # ADVANCED RAM OPTIMIZATION: Tell the reader to ONLY pull these columns
+        # This prevents the 95MB file from expanding to 400MB+ in memory
+        needed_cols = ["geometry", "amenity", "shop", "leisure"]
+        
+        try:
+            # We use ignore_fields to keep the memory footprint tiny during ingestion
+            gdf = gpd.read_file(cache_path, columns=needed_cols)
+            gdf = _ensure_crs(gdf)
+            log.info(f"[Amenities] Optimized load complete. n={len(gdf)}")
+            return gdf, True
+        except Exception as e:
+            log.warning(f"[Amenities] Column-limited read failed, trying standard: {e}")
+            gdf = gpd.read_file(cache_path)
+            gdf = _ensure_crs(gdf)
+            return gdf, True
 
     log.info(f"[Amenities] Cache miss → fetching OSM data for '{state}, {country}'")
     gdf = _fetch_with_retry(country, state)
