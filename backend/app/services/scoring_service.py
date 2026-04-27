@@ -324,6 +324,10 @@ def _to_records(df, kind: str):
 
 def _compute_kpis(stores_df, top_df):
     sales = pd.to_numeric(stores_df.get("Sales", pd.Series([])), errors="coerce").fillna(0)
+    
+    # We use top_df for location-specific KPIs to show the "quality" of predictions
+    has_top = top_df is not None and not top_df.empty
+    
     kpis = {
         "total_stores":   len(stores_df),
         "total_sales":    safe_float(sales.sum()),
@@ -331,8 +335,40 @@ def _compute_kpis(stores_df, top_df):
         "max_sales":      safe_float(sales.max()),
         "min_sales":      safe_float(sales.min()),
         "top_candidates": len(top_df),
-        "avg_score":      safe_float(top_df["Final_Score"].mean()) if "Final_Score" in top_df else 0,
-        "max_score":      safe_float(top_df["Final_Score"].max()) if "Final_Score" in top_df else 0,
-        "avg_predicted_revenue": safe_float(top_df["Predicted_Revenue"].mean()) if "Predicted_Revenue" in top_df else 0,
+        "avg_score":      safe_float(top_df["Final_Score"].mean()) if has_top else 0,
+        "max_score":      safe_float(top_df["Final_Score"].max()) if has_top else 0,
+        "avg_predicted_revenue": safe_float(top_df["Predicted_Revenue"].mean()) if has_top else 0,
+        
+        # New Strategic KPIs
+        "avg_population":   safe_float(top_df["Population"].mean()) if has_top else 0,
+        "avg_income":       safe_float(top_df["Income"].mean()) if has_top else 0,
+        "logistics_coverage": safe_float((top_df["BU_Dist_km"] < 20.0).mean() * 100) if has_top and "BU_Dist_km" in top_df.columns else 0,
+        "cannibalization_risk": safe_float((top_df["Nearest_Store_km"] < 3.0).mean() * 100) if has_top and "Nearest_Store_km" in top_df.columns else 0,
     }
+    
+    # Top sales-producing amenity: correlate amenity counts with store sales
+    amenity_buckets = {
+        "food": "🍽️ Food",
+        "retail": "🛒 Retail",
+        "education": "🏫 Education",
+        "health": "🏥 Health",
+        "leisure": "🎡 Leisure",
+        "transport": "🚌 Transport",
+        "finance": "🏦 Finance",
+    }
+    best_corr, best_amenity = -1, "food"
+    for bucket_key, bucket_label in amenity_buckets.items():
+        col = f"cnt_{bucket_key}"
+        if col in stores_df.columns and "Sales" in stores_df.columns:
+            try:
+                corr = stores_df[col].astype(float).corr(stores_df["Sales"].astype(float))
+                if pd.notna(corr) and corr > best_corr:
+                    best_corr = corr
+                    best_amenity = bucket_key
+            except Exception:
+                pass
+    kpis["top_amenity"] = best_amenity
+    kpis["top_amenity_label"] = amenity_buckets.get(best_amenity, "🍽️ Food")
+    kpis["top_amenity_corr"] = safe_float(best_corr) if best_corr > -1 else 0
+    
     return kpis

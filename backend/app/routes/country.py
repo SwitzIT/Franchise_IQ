@@ -49,6 +49,8 @@ def select_country(body: SelectCountryRequest):
         "success":    True,
         "session_id": sid,
         "country":    country,
+        "currency_symbol": COUNTRIES[country].get("currency_symbol", "$"),
+        "currency_code":   COUNTRIES[country].get("currency_code", "USD"),
         "states":     states_meta,
     }
 

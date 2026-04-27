@@ -9,7 +9,6 @@ const scoreColor = (s) => {
   if (s >= 40) return { text: 'text-cyan',    bg: 'bg-cyan/10',    border: 'border-cyan/30' };
   return           { text: 'text-slate-400', bg: 'bg-white/5',    border: 'border-white/10' };
 };
-
 const rankIcon = (i) => {
   if (i === 0) return '🏆';
   if (i === 1) return '🥈';
@@ -17,12 +16,30 @@ const rankIcon = (i) => {
   return `${i + 1}`;
 };
 
-const fmt = (n) => n?.toLocaleString('en-IN', { maximumFractionDigits: 0 }) ?? '—';
-const cur = (n) => n != null ? `₹${fmt(n)}` : '—';
-
 export default function ResultsTable() {
-  const results = useAppStore(s => s.results);
-  const picks   = results?.top_picks || [];
+  const { results, currencySymbol, country } = useAppStore();
+  const picks = results?.top_picks || [];
+
+  const fmt = (n) => {
+    if (n == null) return '—';
+    const locale = country === 'India' ? 'en-IN' : 'en-US';
+    return n.toLocaleString(locale, { maximumFractionDigits: 0 });
+  };
+
+  const cur = (val) => {
+    if (val == null) return '—';
+    let formatted = '';
+    if (country === 'India') {
+      if (val >= 10000000) formatted = (val / 10000000).toFixed(2) + ' Cr';
+      else if (val >= 100000) formatted = (val / 100000).toFixed(2) + ' L';
+      else formatted = fmt(val);
+    } else {
+      if (val >= 1000000) formatted = (val / 1000000).toFixed(2) + ' M';
+      else if (val >= 1000) formatted = (val / 1000).toFixed(1) + ' K';
+      else formatted = fmt(val);
+    }
+    return `${currencySymbol}${formatted}`;
+  };
 
   if (!picks.length) return null;
 

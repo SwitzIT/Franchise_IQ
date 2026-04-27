@@ -30,7 +30,7 @@ export default function CountrySelector() {
     try {
       const data = await selectCountry(selected);
       setSessionId(data.session_id);
-      setCountry(selected, data.states);
+      setCountry(selected, data.states, data.currency_symbol, data.currency_code);
       setStep('state');
     } catch (e) {
       toast.error(e?.response?.data?.detail || 'Failed to select country');

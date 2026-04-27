@@ -38,6 +38,8 @@ SESSION_TTL_SEC   = int(os.getenv("SESSION_TTL_SEC",   "3600"))    # 1 hour
 COUNTRIES: dict = {
     "India": {
         "code": "IN",
+        "currency_symbol": "₹",
+        "currency_code": "INR",
         "states": {
             "West Bengal": {
                 "demographics_file": "india/west_bengal/demographics.xlsx",
@@ -59,6 +61,8 @@ COUNTRIES: dict = {
     },
     "Sri Lanka": {
         "code": "LK",
+        "currency_symbol": "රු",
+        "currency_code": "LKR",
         "states": {
             "Sri Lanka": {
                 "demographics_file": "srilanka/demographics.xlsx",

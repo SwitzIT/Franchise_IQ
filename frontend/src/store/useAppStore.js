@@ -12,12 +12,20 @@ const useAppStore = create((set, get) => ({
 
   // ── Location Selection ───────────────────────────────────────
   country: null,
+  currencySymbol: '$',
+  currencyCode:   'USD',
   state:   null,
   stateConfig: null,   // {center, zoom, has_kitchen, default_kitchen}
   availableStates: [],
 
-  setCountry: (country, states) => set({ country, availableStates: states,
-    state: null, stateConfig: null }),
+  setCountry: (country, states, symbol, code) => set({ 
+    country, 
+    availableStates: states,
+    currencySymbol: symbol || '$',
+    currencyCode: code || 'USD',
+    state: null, 
+    stateConfig: null 
+  }),
   setState: (state, config) => set({ state, stateConfig: config }),
 
   // ── Data ────────────────────────────────────────────────────
@@ -53,6 +61,26 @@ const useAppStore = create((set, get) => ({
 
   selectedMarker: null,
   setSelectedMarker: (m) => set({ selectedMarker: m }),
+
+  // ── Store Performance Filter ─────────────────────────────────
+  storeFilter: 'all',   // 'all' | 'above' | 'below'
+  setStoreFilter: (f) => set({ storeFilter: f }),
+
+  // ── Franchise Store Selector (for map fly-to) ────────────────
+  selectedStoreName: null,
+  flyToCoords: null,     // { lat, lng, zoom }
+  setSelectedStoreName: (name) => set({ selectedStoreName: name }),
+  flyToStore: (name) => {
+    const results = get().results;
+    if (!name) {
+      set({ selectedStoreName: null, flyToCoords: null });
+      return;
+    }
+    const store = (results?.stores || []).find(s => s.name === name);
+    if (store) {
+      set({ selectedStoreName: name, flyToCoords: { lat: store.lat, lng: store.lng, zoom: 14 } });
+    }
+  },
 
   // ── Loading ──────────────────────────────────────────────────
   loading: false,
