@@ -11,7 +11,7 @@ function FlyToLocation() {
   
   useEffect(() => {
     if (flyToCoords && flyToCoords.lat && flyToCoords.lng) {
-      map.flyTo([flyToCoords.lat, flyToCoords.lng], flyToCoords.zoom || 14, {
+      map.flyTo([flyToCoords.lat, flyToCoords.lng], flyToCoords.zoom || 18, {
         duration: 1.5,
       });
     }
@@ -27,6 +27,42 @@ const emojiIcon = (emoji, size = 28) => L.divIcon({
   iconSize:  [size, size],
   iconAnchor:[size / 2, size / 2],
 });
+
+const storeMarkerIcon = (isAbove) => {
+  const color = isAbove ? '#10b981' : '#ef4444';
+  return L.divIcon({
+    html: `
+      <div style="position: relative; display: flex; flex-direction: column; align-items: center;">
+        <div style="
+          background: ${color};
+          width: 34px;
+          height: 34px;
+          border-radius: 9px;
+          border: 2px solid white;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+          font-size: 20px;
+        ">
+          🏪
+        </div>
+        <div style="
+          width: 0; 
+          height: 0; 
+          border-left: 7px solid transparent;
+          border-right: 7px solid transparent;
+          border-top: 9px solid ${color};
+          margin-top: -1px;
+        "></div>
+      </div>
+    `,
+    className: '',
+    iconSize: [34, 42],
+    iconAnchor: [17, 42],
+    popupAnchor: [0, -40],
+  });
+};
 
 // ─── Prediction Score → colour (green/amber/red) ───────────────
 const predictionColor = (score, maxScore) => {
@@ -251,8 +287,8 @@ export default function MapContainer_() {
                 opacity: 0.7,
               }}
             />
-            {/* Emoji marker */}
-            <Marker position={[d.lat, d.lng]} icon={emojiIcon('🏪', 26)}>
+            {/* Custom Premium Store Marker */}
+            <Marker position={[d.lat, d.lng]} icon={storeMarkerIcon(isAbove)}>
               <Popup maxWidth={300}><InfoCard d={d} avgSales={avgSales} /></Popup>
               <Tooltip sticky direction="top">
                 <div style={{ fontFamily: 'Inter' }}>

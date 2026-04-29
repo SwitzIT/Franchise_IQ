@@ -118,7 +118,7 @@ export default function DashboardPage() {
     if (pred) {
       setSelectedPrediction(name);
       // Use the same flyToCoords mechanism
-      useAppStore.setState({ flyToCoords: { lat: pred.lat, lng: pred.lng, zoom: 14 } });
+      useAppStore.setState({ flyToCoords: { lat: pred.lat, lng: pred.lng, zoom: 18 } });
     }
   };
 

@@ -78,7 +78,7 @@ const useAppStore = create((set, get) => ({
     }
     const store = (results?.stores || []).find(s => s.name === name);
     if (store) {
-      set({ selectedStoreName: name, flyToCoords: { lat: store.lat, lng: store.lng, zoom: 14 } });
+      set({ selectedStoreName: name, flyToCoords: { lat: store.lat, lng: store.lng, zoom: 18 } });
     }
   },
 
