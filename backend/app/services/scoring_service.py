@@ -44,6 +44,7 @@ _RENAME_MAP = {
     "longitude":      "Longitude", "lon": "Longitude", "long": "Longitude",
     "sales":          "Sales",     "sales 2025": "Sales",
     "returns":        "Returns",   "returns 2025": "Returns",
+    "district":       "District",
 }
 
 
@@ -176,6 +177,8 @@ def run_pipeline(
             })
         return records
 
+    region_stats = _compute_region_stats(stores_df, cands_df, demographics_df)
+
     return {
         "top_picks":      _to_records(top_df, "prediction"),
         "all_candidates": _to_records(cands_df, "prediction"),
@@ -185,7 +188,93 @@ def run_pipeline(
         "amenities":      _amenities_to_records(amenities_gdf),
         "kpis":           _compute_kpis(stores_df, top_df),
         "model_metrics":  train_metrics,
+        "region_stats":   region_stats,
     }
+
+
+def _compute_region_stats(stores_df: pd.DataFrame, cands_df: pd.DataFrame, demographics_df: pd.DataFrame) -> list[dict]:
+    # Group existing stores by district
+    store_stats = {}
+    if "District" in stores_df.columns and "Sales" in stores_df.columns:
+        grouped = stores_df.groupby("District")
+        for district, group in grouped:
+            sales = pd.to_numeric(group["Sales"], errors="coerce").fillna(0)
+            store_stats[district] = {
+                "store_count": len(group),
+                "total_sales": float(sales.sum()),
+                "avg_sales": float(sales.mean()),
+            }
+
+    # Group candidates by district
+    cand_stats = {}
+    if "District" in cands_df.columns and "Final_Score" in cands_df.columns:
+        grouped = cands_df.groupby("District")
+        for district, group in grouped:
+            score = pd.to_numeric(group["Final_Score"], errors="coerce").fillna(0)
+            cand_stats[district] = {
+                "candidate_count": len(group),
+                "avg_score": float(score.mean()),
+            }
+
+    # Group demographics by district
+    demog_stats = {}
+    if "District" in demographics_df.columns:
+        pop_col = "Population" if "Population" in demographics_df else demographics_df.columns[2]
+        inc_cols = [c for c in demographics_df.columns if "income" in c.lower()]
+        inc_col = inc_cols[0] if inc_cols else None
+        
+        grouped = demographics_df.groupby("District")
+        for district, group in grouped:
+            pop = pd.to_numeric(group[pop_col], errors="coerce").fillna(0)
+            inc = pd.to_numeric(group[inc_col], errors="coerce").fillna(0) if inc_col else pd.Series([0]*len(group))
+            demog_stats[district] = {
+                "avg_population": float(pop.mean()),
+                "avg_income": float(inc.mean()),
+            }
+
+    # Combine all stats
+    all_districts = set(store_stats.keys()) | set(cand_stats.keys()) | set(demog_stats.keys())
+    result = []
+    
+    mean_sales = stores_df["Sales"].mean() if "Sales" in stores_df.columns and len(stores_df) > 0 else 0
+    
+    for dist in all_districts:
+        if not dist or pd.isna(dist) or str(dist).lower() in ("nan", "unknown", "n/a", ""):
+            continue
+        
+        s = store_stats.get(dist, {"store_count": 0, "total_sales": 0.0, "avg_sales": 0.0})
+        c = cand_stats.get(dist, {"candidate_count": 0, "avg_score": 0.0})
+        d = demog_stats.get(dist, {"avg_population": 0.0, "avg_income": 0.0})
+        
+        avg_sales = s["avg_sales"]
+        avg_score = c["avg_score"]
+        
+        # Performance label
+        if s["store_count"] > 0:
+            if mean_sales > 0:
+                performance = "High Performing" if avg_sales >= 1.1 * mean_sales else \
+                              "Low Performing" if avg_sales <= 0.9 * mean_sales else \
+                              "Average Performing"
+            else:
+                performance = "Average Performing"
+        else:
+            performance = "High Potential" if avg_score >= 60 else "Moderate Potential"
+            
+        result.append({
+            "district": str(dist),
+            "store_count": int(s["store_count"]),
+            "total_sales": float(s["total_sales"]),
+            "avg_sales": float(s["avg_sales"]),
+            "candidate_count": int(c["candidate_count"]),
+            "avg_score": float(avg_score),
+            "avg_population": float(d["avg_population"]),
+            "avg_income": float(d["avg_income"]),
+            "performance": performance,
+        })
+        
+    # Sort by store_count desc, avg_sales desc, avg_score desc
+    result.sort(key=lambda x: (x["store_count"] > 0, x["avg_sales"], x["avg_score"]), reverse=True)
+    return result
 
 
 # ─────────────────────────────────────────────────────────────
@@ -213,13 +302,21 @@ def _map_demographics(df, demographics_df):
     d_pop = demographics_df[pop_col].values
     inc_cols = [c for c in demographics_df.columns if "income" in c.lower()]
     d_inc = demographics_df[inc_cols[0]].values if inc_cols else np.zeros(len(demographics_df))
-    pops, incs = [], []
+    
+    pops, incs, districts = [], [], []
     for lat, lon in zip(df["Latitude"], df["Longitude"]):
         idx, _ = nearest_neighbor_index(d_lats, d_lons, lat, lon)
         pops.append(d_pop[idx])
         incs.append(d_inc[idx])
+        districts.append(demographics_df["District"].values[idx] if "District" in demographics_df.columns else "Unknown")
+        
     df["Population"] = pd.to_numeric(pd.Series(pops), errors="coerce").fillna(0).values
     df["Income"]     = pd.to_numeric(pd.Series(incs), errors="coerce").fillna(0).values
+    
+    if "District" not in df.columns:
+        df["District"] = districts
+    else:
+        df["District"] = df["District"].fillna(pd.Series(districts))
     return df
 
 
@@ -317,6 +414,7 @@ def _to_records(df, kind: str):
             "distance_penalty": safe_float(row.get("Distance_Penalty", 1.0)),
             "is_too_close": bool(row.get("Is_Too_Close", False)),
             "adjusted_final_score": safe_float(row.get("Adjusted_Final_Score", row.get("Final_Score", 0))),
+            "district":  str(row.get("District", "")),
         }
         records.append(r)
     return records

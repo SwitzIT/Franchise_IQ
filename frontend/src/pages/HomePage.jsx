@@ -5,17 +5,15 @@ import toast from 'react-hot-toast';
 import useAppStore from '../store/useAppStore';
 import { selectState } from '../services/api';
 import CountrySelector from '../components/CountrySelector';
-import FileUpload from '../components/FileUpload';
-import BusinessUnitModal from '../components/BusinessUnitModal';
+import DataPreview from '../components/DataPreview';
 
-const STEP_ORDER = ['country', 'state', 'upload', 'bu_question'];
+const STEP_ORDER = ['country', 'state', 'configure'];
 
 function StepProgress({ current }) {
   const steps = [
     { id: 'country',     label: 'Country' },
     { id: 'state',       label: 'State' },
-    { id: 'upload',      label: 'Upload' },
-    { id: 'bu_question', label: 'Units' },
+    { id: 'configure',   label: 'Configure' },
   ];
   const ci = steps.findIndex(s => s.id === current);
   return (
@@ -56,7 +54,7 @@ function StateSelector() {
     try {
       const data = await selectState(sessionId, selected);
       setState(selected, data);
-      setStep('upload');
+      setStep('configure');
     } catch (e) {
       toast.error(e?.response?.data?.detail || 'Failed to select state');
     } finally { setBusy(false); setLoading(false); }
@@ -146,10 +144,9 @@ export default function HomePage() {
       {/* Step content */}
       <div className="w-full max-w-xl relative z-10">
         <AnimatePresence mode="wait">
-          {step === 'country'     && <CountrySelector   key="country" />}
-          {step === 'state'       && <StateSelector      key="state" />}
-          {step === 'upload'      && <FileUpload         key="upload" />}
-          {step === 'bu_question' && <BusinessUnitModal  key="bu" />}
+          {step === 'country'   && <CountrySelector key="country" />}
+          {step === 'state'     && <StateSelector   key="state" />}
+          {step === 'configure' && <DataPreview     key="configure" />}
         </AnimatePresence>
       </div>
     </div>

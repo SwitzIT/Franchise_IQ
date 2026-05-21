@@ -3,20 +3,17 @@ import { motion } from 'framer-motion';
 import useAppStore from '../store/useAppStore';
 
 const STEPS_META = [
-  { id: 'country',    label: 'Region',   emoji: '🌍' },
-  { id: 'state',      label: 'State',    emoji: '🗺️' },
-  { id: 'upload',     label: 'Data',     emoji: '📂' },
-  { id: 'bu_question',label: 'Units',    emoji: '🏭' },
-  { id: 'predicting', label: 'Analyze',  emoji: '⚙️' },
-  { id: 'dashboard',  label: 'Results',  emoji: '✅' },
+  { id: 'country',    label: 'Region',    emoji: '🌍' },
+  { id: 'state',      label: 'State',     emoji: '🗺️' },
+  { id: 'configure',  label: 'Configure', emoji: '⚙️' },
+  { id: 'predicting', label: 'Analyze',   emoji: '🧠' },
+  { id: 'dashboard',  label: 'Results',   emoji: '✅' },
 ];
 
 const MESSAGES = {
   country:     'Initializing country data pipeline…',
   state:       'Loading state-level demographics…',
-  upload:      'Parsing files and checking amenity cache…',
-  amenities:   'Fetching amenities via OSMnx — this may take a few minutes…',
-  bu_question: 'Setting up business unit clustering…',
+  configure:   'Preparing state data files and cache…',
   predicting:  'Running Random Forest pipeline — crunching numbers…',
 };
 
@@ -60,11 +57,11 @@ export default function LoadingOverlay() {
 
       {/* Step indicators */}
       <div className="flex items-center gap-2 mt-8">
-        {STEPS_META.slice(0, 5).map((s, i) => (
+        {STEPS_META.slice(0, 4).map((s, i) => (
           <React.Fragment key={s.id}>
             <div className={`w-2 h-2 rounded-full transition-colors duration-300
                             ${i <= idx ? 'bg-purple' : 'bg-white/10'}`} />
-            {i < 4 && <div className={`w-6 h-px ${i < idx ? 'bg-purple' : 'bg-white/10'}`} />}
+            {i < 3 && <div className={`w-6 h-px ${i < idx ? 'bg-purple' : 'bg-white/10'}`} />}
           </React.Fragment>
         ))}
       </div>

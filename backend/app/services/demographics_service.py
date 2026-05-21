@@ -48,12 +48,15 @@ def load_demographics(country: str, state: str) -> pd.DataFrame:
 
 def get_countries_list() -> list[dict]:
     """Return countries + states metadata for the /api/countries endpoint."""
+    from app.config import get_preloaded_files
     result = []
     for country_name, meta in COUNTRIES.items():
         states = []
         for state_name, scfg in meta["states"].items():
             p = get_demographics_path(country_name, state_name)
-            states.append({"name": state_name, "has_data": p.exists()})
+            preloads = get_preloaded_files(country_name, state_name)
+            has_preloads = preloads.get("stores_file") is not None
+            states.append({"name": state_name, "has_data": p.exists() and has_preloads})
         result.append({
             "name": country_name,
             "code": meta["code"],

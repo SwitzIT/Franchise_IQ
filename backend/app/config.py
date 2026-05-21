@@ -17,8 +17,9 @@ AMENITIES_DIR     = Path(os.getenv("AMENITIES_DIR",     str(PROJECT_ROOT / "amen
 UPLOADS_DIR       = Path(os.getenv("UPLOADS_DIR",       str(PROJECT_ROOT / "uploads")))
 OUTPUTS_DIR       = Path(os.getenv("OUTPUTS_DIR",       str(PROJECT_ROOT / "outputs")))
 LOGS_DIR          = Path(os.getenv("LOGS_DIR",          str(PROJECT_ROOT / "logs")))
+DOWNLOADS_DIR     = Path(os.getenv("DOWNLOADS_DIR",     str(PROJECT_ROOT / "downloads")))
 
-for _d in [DATA_DIR, AMENITIES_DIR, UPLOADS_DIR, OUTPUTS_DIR, LOGS_DIR]:
+for _d in [DATA_DIR, AMENITIES_DIR, UPLOADS_DIR, OUTPUTS_DIR, LOGS_DIR, DOWNLOADS_DIR]:
     _d.mkdir(parents=True, exist_ok=True)
 
 # ─────────────────────────────────────────────────────────────
@@ -43,6 +44,9 @@ COUNTRIES: dict = {
         "states": {
             "West Bengal": {
                 "demographics_file": "india/west_bengal/demographics.xlsx",
+                "stores_file":       "Mio_franchise_stores.xlsx",
+                "bu_file":           "Mio_business_unit.xlsx",
+                "requests_file":     None,
                 "center":       [22.9868, 87.8550],
                 "zoom":         8,
                 "grid_bounds":  [21.0, 27.5, 85.8, 89.9],   # [lat_min, lat_max, lon_min, lon_max]
@@ -51,6 +55,9 @@ COUNTRIES: dict = {
             },
             "Odisha": {
                 "demographics_file": "india/odisha/demographics.xlsx",
+                "stores_file":       None,
+                "bu_file":           None,
+                "requests_file":     None,
                 "center":       [20.9517, 85.0985],
                 "zoom":         7,
                 "grid_bounds":  [17.8, 22.6, 81.4, 87.5],
@@ -66,6 +73,9 @@ COUNTRIES: dict = {
         "states": {
             "Sri Lanka": {
                 "demographics_file": "srilanka/demographics.xlsx",
+                "stores_file":       "srilanka_franchise_stores.xlsx",
+                "bu_file":           "Srilanka_central_kitchen.xlsx",
+                "requests_file":     "srilanka_franchise_requests.xlsx",
                 "center":       [7.8731,  80.7718],
                 "zoom":         8,
                 "grid_bounds":  [5.8, 9.9, 79.5, 82.0],
@@ -152,3 +162,25 @@ def get_demographics_path(country: str, state: str) -> Path:
 def get_amenities_cache_path(country: str, state: str) -> Path:
     key = f"{country.lower().replace(' ', '_')}_{state.lower().replace(' ', '_')}"
     return AMENITIES_DIR / f"{key}.geojson"
+
+
+def get_downloads_path(filename: str) -> Path:
+    """Return path to a pre-loaded data file in downloads/."""
+    return DOWNLOADS_DIR / filename
+
+
+def get_preloaded_files(country: str, state: str) -> dict:
+    """
+    Return resolved Path objects for pre-loaded data files of this country/state.
+    Values are None when no file is configured or the file does not exist.
+    """
+    cfg = get_state_config(country, state)
+    result = {}
+    for key in ("stores_file", "bu_file", "requests_file"):
+        fname = cfg.get(key)
+        if fname:
+            p = DOWNLOADS_DIR / fname
+            result[key] = p if p.exists() else None
+        else:
+            result[key] = None
+    return result

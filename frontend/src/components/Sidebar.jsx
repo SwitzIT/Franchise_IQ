@@ -1,5 +1,5 @@
 import React from 'react';
-import { Layers, Eye, EyeOff, RefreshCw, Download, TrendingUp, TrendingDown, Filter } from 'lucide-react';
+import { Layers, Eye, EyeOff, RefreshCw, Download, TrendingUp, TrendingDown, Filter, Trophy } from 'lucide-react';
 import useAppStore from '../store/useAppStore';
 import ResultsTable from './ResultsTable';
 import { getDownloadUrl } from '../services/api';
@@ -152,6 +152,49 @@ export default function Sidebar() {
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Regional Insights */}
+      {results && results.region_stats && results.region_stats.length > 0 && (
+        <div className="glass-card p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Trophy size={14} className="text-amber" />
+            <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider">Regional Insights</h3>
+          </div>
+          <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
+            {results.region_stats.map((r, i) => {
+              const perfColor = r.performance === "High Performing" ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" :
+                                r.performance === "Low Performing" ? "text-rose-400 bg-rose-500/10 border-rose-500/20" :
+                                r.performance === "High Potential" ? "text-cyan bg-cyan/10 border-cyan/20" :
+                                "text-slate-400 bg-white/[0.04] border-white/5";
+              return (
+                <div key={r.district} className="p-2.5 rounded-lg bg-white/[0.02] border border-white/5 hover:border-purple/30 transition-all">
+                  <div className="flex items-center justify-between gap-2 mb-1.5">
+                    <span className="text-xs font-black text-white truncate">{r.district}</span>
+                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${perfColor}`}>
+                      {r.performance}
+                    </span>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-400 font-medium">
+                    <div>
+                      <p className="text-[8px] text-slate-600 font-bold uppercase">Stores</p>
+                      <p className="text-slate-200 mt-0.5">{r.store_count > 0 ? `${r.store_count} stores` : 'None'}</p>
+                    </div>
+                    <div>
+                      <p className="text-[8px] text-slate-600 font-bold uppercase">
+                        {r.store_count > 0 ? 'Avg Sales' : 'Avg Score'}
+                      </p>
+                      <p className="text-slate-200 mt-0.5">
+                        {r.store_count > 0 ? cur(r.avg_sales) : `${r.avg_score.toFixed(1)} pts`}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

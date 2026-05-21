@@ -26,6 +26,9 @@ export const loadData = (session_id, storesFile, requestsFile) => {
   return api.post('/load_data', fd).then(r => r.data);
 };
 
+export const loadPreloaded = (session_id) =>
+  api.post('/load_preloaded', { session_id }).then(r => r.data);
+
 // ── Amenities ─────────────────────────────────────────────────
 export const fetchAmenities = (session_id) =>
   api.post('/fetch_amenities', { session_id }).then(r => r.data);
