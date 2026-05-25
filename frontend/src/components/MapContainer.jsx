@@ -169,6 +169,12 @@ function InfoCard({ d, avgSales }) {
             </div>
           </div>
         )}
+
+        <div style={{ marginTop: 10, textAlign: 'center' }}>
+          <a href={`https://www.google.com/maps/search/?api=1&query=${d.lat},${d.lng}`} target="_blank" rel="noopener noreferrer" style={{ color: '#38bdf8', fontSize: 12, textDecoration: 'none', fontWeight: 600 }}>
+            🗺️ Open in Google Maps
+          </a>
+        </div>
       </div>
     </div>
   );
