@@ -45,6 +45,10 @@ _RENAME_MAP = {
     "sales":          "Sales",     "sales 2025": "Sales",
     "returns":        "Returns",   "returns 2025": "Returns",
     "district":       "District",
+    "region":         "Region",
+    "zone":           "Region",
+    "area":           "Region",
+    "territory":      "Region",
 }
 
 
@@ -59,6 +63,12 @@ def standardise_df(df: pd.DataFrame) -> pd.DataFrame:
     if "Latitude" in df.columns and "Longitude" in df.columns:
         df = df.dropna(subset=["Latitude", "Longitude"])
         df = df[(df["Latitude"] != 0) | (df["Longitude"] != 0)]
+    # Default Region to "Unassigned" if not present
+    if "Region" not in df.columns:
+        df["Region"] = "Unassigned"
+    else:
+        df["Region"] = df["Region"].fillna("Unassigned").astype(str).str.strip()
+        df["Region"] = df["Region"].replace("", "Unassigned")
     return df.reset_index(drop=True)
 
 
@@ -415,6 +425,7 @@ def _to_records(df, kind: str):
             "is_too_close": bool(row.get("Is_Too_Close", False)),
             "adjusted_final_score": safe_float(row.get("Adjusted_Final_Score", row.get("Final_Score", 0))),
             "district":  str(row.get("District", "")),
+            "region":    str(row.get("Region", "Unassigned")),
         }
         records.append(r)
     return records

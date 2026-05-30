@@ -9,6 +9,8 @@ from .amenities import router as amenities_router
 from .business_units import router as bu_router
 from .predict   import router as predict_router
 from .results   import router as results_router
+from .analytics import router as analytics_router
+from .chat      import router as chat_router
 
 api_router = APIRouter(prefix="/api")
 api_router.include_router(country_router)
@@ -17,3 +19,5 @@ api_router.include_router(amenities_router)
 api_router.include_router(bu_router)
 api_router.include_router(predict_router)
 api_router.include_router(results_router)
+api_router.include_router(analytics_router)
+api_router.include_router(chat_router)

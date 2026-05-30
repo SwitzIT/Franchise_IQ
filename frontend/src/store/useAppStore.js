@@ -68,19 +68,16 @@ const useAppStore = create((set, get) => ({
 
   // ── Franchise Store Selector (for map fly-to) ────────────────
   selectedStoreName: null,
-  flyToCoords: null,     // { lat, lng, zoom }
-  setSelectedStoreName: (name) => set({ selectedStoreName: name }),
-  flyToStore: (name) => {
-    const results = get().results;
-    if (!name) {
-      set({ selectedStoreName: null, flyToCoords: null });
-      return;
-    }
-    const store = (results?.stores || []).find(s => s.name === name);
-    if (store) {
-      set({ selectedStoreName: name, flyToCoords: { lat: store.lat, lng: store.lng, zoom: 18 } });
-    }
-  },
+  
+  // ── Region KPIs (Feature 1) ──────────────────────────────────
+  regionKpis: null,
+  selectedRegion: null,
+  setRegionKpis: (kpis) => set({ regionKpis: kpis }),
+  setSelectedRegion: (region) => set({ selectedRegion: region }),
+
+  // ── Chat (Feature 2) ─────────────────────────────────────────
+  chatOpen: false,
+  toggleChat: () => set((s) => ({ chatOpen: !s.chatOpen })),
 
   // ── Loading ──────────────────────────────────────────────────
   loading: false,
@@ -92,6 +89,7 @@ const useAppStore = create((set, get) => ({
     step: 'country', sessionId: null, country: null, state: null,
     stateConfig: null, availableStates: [], nStores: 0, nRequests: 0,
     amenitiesInfo: null, hasBU: false, buInfo: null, results: null,
+    regionKpis: null, selectedRegion: null, chatOpen: false,
     loading: false, loadingMsg: '',
   }),
 }));

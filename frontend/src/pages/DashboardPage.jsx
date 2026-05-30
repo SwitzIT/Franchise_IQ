@@ -5,6 +5,7 @@ import { Sparkles, Store, FileText, Star, Building2, Activity, Maximize2, Minimi
          ChevronDown, ChevronUp, MapPin, Trophy } from 'lucide-react';
 import useAppStore from '../store/useAppStore';
 import Sidebar from '../components/Sidebar';
+import ChatPanel from '../components/ChatPanel';
 
 // Lazy-load map to avoid SSR issues with Leaflet
 const LazyMap = React.lazy(() => import('../components/MapContainer'));
@@ -103,7 +104,7 @@ function NavDropdown({ icon: Icon, label, items, selectedName, onSelect, iconCol
 }
 
 export default function DashboardPage() {
-  const { results, country, state, currencySymbol, selectedStoreName, flyToStore } = useAppStore();
+  const { results, regionKpis, selectedRegion, setSelectedRegion, country, state, currencySymbol, selectedStoreName, flyToStore } = useAppStore();
   const kpis = results?.kpis || {};
   const stores = results?.stores || [];
   const predictions = results?.top_picks || [];
@@ -143,6 +144,7 @@ export default function DashboardPage() {
   // Prepare dropdown items
   const storeItems = stores.map(s => ({ name: s.name }));
   const predItems = predictions.map((p, i) => ({ name: p.name, score: p.score, rank: i + 1 }));
+  const regionItems = regionKpis?.regions?.map(r => ({ name: r.name, score: r.avg_final_score })) || [];
 
   return (
     <div className="flex flex-col h-screen overflow-hidden">
@@ -251,6 +253,15 @@ export default function DashboardPage() {
           items={predItems} selectedName={selectedPrediction}
           onSelect={(name) => flyToPrediction(name)}
         />
+        
+        {/* Region Filter Dropdown */}
+        {regionItems.length > 0 && (
+          <NavDropdown
+            icon={MapPin} label="Filter by Region" iconColor="text-emerald-400"
+            items={regionItems} selectedName={selectedRegion}
+            onSelect={(name) => setSelectedRegion(name)}
+          />
+        )}
       </div>
 
       {/* ── Main Layout ──────────────────────────────────────── */}
@@ -352,6 +363,9 @@ export default function DashboardPage() {
           </div>
         </main>
       </div>
+      
+      {/* ── Chatbot Overlay ────────────────────────────────────── */}
+      {results && <ChatPanel />}
     </div>
   );
 }

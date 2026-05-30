@@ -1,7 +1,10 @@
 import axios from 'axios';
 
 const RAW_BASE = import.meta.env.VITE_API_URL || '';
-const BASE = RAW_BASE.replace(/\/+$/, '');
+let BASE = RAW_BASE.replace(/\/+$/, '');
+if (BASE && !BASE.startsWith('http')) {
+  BASE = `https://${BASE}`;
+}
 
 const api = axios.create({
   baseURL: `${BASE}/api`,
@@ -49,12 +52,21 @@ export const clearBusinessUnits = (session_id) =>
   api.delete(`/business_units?session_id=${session_id}`).then(r => r.data);
 
 // ── Predict ───────────────────────────────────────────────────
-export const runPrediction = (session_id, top_n = 10) =>
-  api.post('/predict', { session_id, top_n }).then(r => r.data);
+export const runPrediction = async (sessionId, topN = 10) => {
+  const { data } = await api.post('/predict', { session_id: sessionId, top_n: topN });
+  return data;
+};
 
 // ── Results ───────────────────────────────────────────────────
-export const getResults = (session_id) =>
-  api.get(`/get_results?session_id=${session_id}`).then(r => r.data);
+export const getResults = async (sessionId) => {
+  const { data } = await api.get(`/results/get_results?session_id=${sessionId}`);
+  return data;
+};
+
+export const getRegionKpis = async (sessionId) => {
+  const { data } = await api.get(`/region-kpis?session_id=${sessionId}`);
+  return data;
+};
 
 export const getDownloadUrl = (session_id) =>
   `${BASE}/api/download_results?session_id=${session_id}`;

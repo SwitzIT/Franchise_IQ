@@ -115,15 +115,20 @@ function InfoCard({ d, avgSales }) {
     <div style={{ fontFamily: 'Inter,sans-serif', width: 280, padding: 0 }}>
       {/* Header */}
       <div style={{ background: headerBg, padding: '10px 14px', borderRadius: '10px 10px 0 0' }}>
-        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-          {d.type === 'prediction' ? '🏆 Top Candidate' : d.type === 'store' ? '🏪 Existing Store' : d.type === 'request' ? '📩 Franchise Request' : '🏭 Business Unit'}
+        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
+          <span>{d.type === 'prediction' ? '🏆 Top Candidate' : d.type === 'store' ? '🏪 Existing Store' : d.type === 'request' ? '📩 Franchise Request' : '🏭 Business Unit'}</span>
+          {d.region && d.region !== 'Unassigned' && (
+            <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 4, background: 'rgba(124,58,237,0.25)', color: '#d8b4fe', border: '1px solid rgba(124,58,237,0.4)' }}>
+              📍 {d.region}
+            </span>
+          )}
           {d.type === 'store' && avgSales > 0 && (
-            <span style={{ marginLeft: 8, fontSize: 9, padding: '2px 6px', borderRadius: 4, background: 'rgba(0,0,0,0.25)' }}>
+            <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 4, background: 'rgba(0,0,0,0.25)' }}>
               {d.revenue >= avgSales ? '▲ Above Avg' : '▼ Below Avg'}
             </span>
           )}
         </div>
-        <div style={{ fontSize: 15, color: '#fff', fontWeight: 800, marginTop: 2 }}>{d.name || 'Unknown'}</div>
+        <div style={{ fontSize: 15, color: '#fff', fontWeight: 800, marginTop: 4 }}>{d.name || 'Unknown'}</div>
         {d.score > 0 && (
           <div style={{ fontSize: 22, fontWeight: 900, color: '#fff', marginTop: 4 }}>
             {d.score?.toFixed(1)}<span style={{ fontSize: 11 }}>/100</span>
@@ -193,7 +198,7 @@ const getAmenityEmoji = (type) => {
 
 // ─── Main Map Component ───────────────────────────────────────
 export default function MapContainer_() {
-  const { results, stateConfig, mapLayers, storeFilter } = useAppStore();
+  const { results, stateConfig, mapLayers, storeFilter, selectedRegion } = useAppStore();
   const center = stateConfig?.center || [20, 78];
   const zoom   = stateConfig?.zoom   || 6;
 
@@ -208,15 +213,26 @@ export default function MapContainer_() {
     // Find max prediction score for relative colouring
     const maxS = allPreds.reduce((mx, p) => Math.max(mx, p.score || 0), 0);
     
-    // Apply store filter
+    // Apply filters
     let filteredStores = allStores;
-    if (storeFilter === 'above') filteredStores = allStores.filter(s => s.revenue >= avg);
-    if (storeFilter === 'below') filteredStores = allStores.filter(s => s.revenue < avg);
+    let filteredRequests = results?.requests || [];
+    let filteredPreds = allPreds;
+
+    // Apply store performance filter
+    if (storeFilter === 'above') filteredStores = filteredStores.filter(s => s.revenue >= avg);
+    if (storeFilter === 'below') filteredStores = filteredStores.filter(s => s.revenue < avg);
+    
+    // Apply region filter
+    if (selectedRegion) {
+      filteredStores = filteredStores.filter(s => s.region === selectedRegion);
+      filteredRequests = filteredRequests.filter(r => r.region === selectedRegion);
+      filteredPreds = filteredPreds.filter(p => p.region === selectedRegion);
+    }
     
     return {
       stores: filteredStores,
-      requests: results?.requests || [],
-      predictions: allPreds,
+      requests: filteredRequests,
+      predictions: filteredPreds,
       business_units: results?.business_units || [],
       amenities: results?.amenities || [],
       avgSales: avg,

@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Database, HelpCircle, AlertCircle, Play, CheckCircle, Sparkles, Sliders } from 'lucide-react';
 import toast from 'react-hot-toast';
 import useAppStore from '../store/useAppStore';
-import { loadPreloaded, fetchAmenities, runPrediction } from '../services/api';
+import { loadPreloaded, fetchAmenities, runPrediction, getRegionKpis } from '../services/api';
 
 export default function DataPreview() {
   const { sessionId, country, state, setDataStats, setAmenitiesInfo, setHasBU, setResults, setStep, setLoading } = useAppStore();
@@ -55,6 +55,11 @@ export default function DataPreview() {
       setLoading(true, `Running location intelligence model with top ${topN} picks…`);
       const predRes = await runPrediction(sessionId, topN);
       setResults(predRes);
+      
+      // Phase 3: Fetch Region KPIs
+      const regionKpis = await getRegionKpis(sessionId);
+      useAppStore.getState().setRegionKpis(regionKpis);
+      
       toast.success(`Pipeline executed successfully!`);
       
       // Step 3: Transition to Dashboard
