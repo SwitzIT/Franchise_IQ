@@ -18,13 +18,13 @@ const useAppStore = create((set, get) => ({
   stateConfig: null,   // {center, zoom, has_kitchen, default_kitchen}
   availableStates: [],
 
-  setCountry: (country, states, symbol, code) => set({ 
-    country, 
+  setCountry: (country, states, symbol, code) => set({
+    country,
     availableStates: states,
     currencySymbol: symbol || '$',
     currencyCode: code || 'USD',
-    state: null, 
-    stateConfig: null 
+    state: null,
+    stateConfig: null
   }),
   setState: (state, config) => set({ state, stateConfig: config }),
 
@@ -50,11 +50,11 @@ const useAppStore = create((set, get) => ({
 
   // ── Map UI State ─────────────────────────────────────────────
   mapLayers: {
-    stores:      true,
-    requests:    true,
-    predictions: true,
+    stores:        true,
+    requests:      true,
+    predictions:   true,
     businessUnits: true,
-    amenities:   true,
+    amenities:     true,
   },
   toggleLayer: (layer) =>
     set((s) => ({ mapLayers: { ...s.mapLayers, [layer]: !s.mapLayers[layer] } })),
@@ -62,20 +62,39 @@ const useAppStore = create((set, get) => ({
   selectedMarker: null,
   setSelectedMarker: (m) => set({ selectedMarker: m }),
 
+  // ── Fly-to coords (map) ──────────────────────────────────────
+  flyToCoords: null,
+
   // ── Store Performance Filter ─────────────────────────────────
   storeFilter: 'all',   // 'all' | 'above' | 'below'
   setStoreFilter: (f) => set({ storeFilter: f }),
 
   // ── Franchise Store Selector (for map fly-to) ────────────────
   selectedStoreName: null,
-  
-  // ── Region KPIs (Feature 1) ──────────────────────────────────
+
+  flyToStore: (name) => {
+    if (!name) {
+      set({ selectedStoreName: null, flyToCoords: null });
+      return;
+    }
+    const { results } = get();
+    const stores = results?.stores || [];
+    const store = stores.find(s => s.name === name);
+    if (store) {
+      set({
+        selectedStoreName: name,
+        flyToCoords: { lat: store.lat, lng: store.lng, zoom: 16 },
+      });
+    }
+  },
+
+  // ── Region KPIs ──────────────────────────────────────────────
   regionKpis: null,
   selectedRegion: null,
   setRegionKpis: (kpis) => set({ regionKpis: kpis }),
   setSelectedRegion: (region) => set({ selectedRegion: region }),
 
-  // ── Chat (Feature 2) ─────────────────────────────────────────
+  // ── Chat ─────────────────────────────────────────────────────
   chatOpen: false,
   toggleChat: () => set((s) => ({ chatOpen: !s.chatOpen })),
 
@@ -90,7 +109,8 @@ const useAppStore = create((set, get) => ({
     stateConfig: null, availableStates: [], nStores: 0, nRequests: 0,
     amenitiesInfo: null, hasBU: false, buInfo: null, results: null,
     regionKpis: null, selectedRegion: null, chatOpen: false,
-    loading: false, loadingMsg: '',
+    loading: false, loadingMsg: '', selectedStoreName: null,
+    flyToCoords: null, storeFilter: 'all',
   }),
 }));
 

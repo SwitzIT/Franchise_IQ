@@ -1,38 +1,49 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import clsx from 'clsx';
 
-const ACCENTS = {
-  purple: { border: 'border-purple/30', glow: 'shadow-glow-sm', icon: 'text-purple-light', bar: 'bg-purple' },
-  cyan:   { border: 'border-cyan/30',   glow: 'shadow-[0_0_16px_rgba(6,182,212,0.25)]', icon: 'text-cyan',   bar: 'bg-cyan' },
-  green:  { border: 'border-green/30',  glow: 'shadow-[0_0_16px_rgba(16,185,129,0.25)]', icon: 'text-green',  bar: 'bg-green' },
-  amber:  { border: 'border-amber/30',  glow: 'shadow-[0_0_16px_rgba(245,158,11,0.25)]', icon: 'text-amber',  bar: 'bg-amber' },
-};
-
-export default function KPICard({ icon: Icon, label, value, sub, accent = 'purple', delay = 0, progress }) {
-  const a = ACCENTS[accent] || ACCENTS.purple;
-
+/**
+ * KPICard – clean light-theme summary card
+ * Props: icon (component), label, value, sub, color, delay, trend
+ */
+export default function KPICard({ icon: Icon, label, value, sub, color = '#6C4CF1', delay = 0, trend }) {
+  const bgAlpha = `${color}18`;
   return (
     <motion.div
-      initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-      transition={{ delay, duration: 0.4 }}
-      className={clsx('glass-card p-4 flex flex-col gap-2 min-w-[130px]', a.border, a.glow)}
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay, duration: 0.35, ease: 'easeOut' }}
+      className="card flex flex-col gap-3 p-6 flex-1 min-w-0"
+      style={{ minWidth: 140 }}
     >
-      <div className="flex items-center gap-2">
-        {Icon && <Icon size={15} className={a.icon} />}
-        <span className="text-xs text-slate-500 font-medium truncate">{label}</span>
-      </div>
-      <div className="text-xl font-black text-white tabular-nums tracking-tight">{value}</div>
-      {sub && <div className="text-xs text-slate-600">{sub}</div>}
-      {progress != null && (
-        <div className="w-full h-0.5 bg-white/5 rounded-full overflow-hidden mt-1">
-          <motion.div
-            initial={{ width: 0 }} animate={{ width: `${Math.min(progress, 100)}%` }}
-            transition={{ delay: delay + 0.2, duration: 0.8, ease: 'easeOut' }}
-            className={`h-full rounded-full ${a.bar}`}
-          />
+      {/* Icon + Label row */}
+      <div className="flex items-center justify-between">
+        <div
+          className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+          style={{ backgroundColor: bgAlpha }}
+        >
+          <Icon size={17} style={{ color }} />
         </div>
-      )}
+        {trend != null && (
+          <span
+            className="text-[11px] font-semibold px-2 py-0.5 rounded-full"
+            style={{
+              color: trend >= 0 ? '#22C55E' : '#EF4444',
+              backgroundColor: trend >= 0 ? '#DCFCE7' : '#FEE2E2',
+            }}
+          >
+            {trend >= 0 ? '+' : ''}{trend}%
+          </span>
+        )}
+      </div>
+
+      {/* Value */}
+      <div>
+        <p className="text-2xl font-bold text-ink tabular-nums leading-none">{value}</p>
+        {sub && <p className="text-xs text-ink-muted mt-1">{sub}</p>}
+      </div>
+
+      {/* Label */}
+      <p className="text-xs font-medium text-ink-subtle">{label}</p>
     </motion.div>
   );
 }

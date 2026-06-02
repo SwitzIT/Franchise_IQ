@@ -11,10 +11,10 @@ const STEPS_META = [
 ];
 
 const MESSAGES = {
-  country:     'Initializing country data pipeline…',
-  state:       'Loading state-level demographics…',
-  configure:   'Preparing state data files and cache…',
-  predicting:  'Running Random Forest pipeline — crunching numbers…',
+  country:    'Initializing country data pipeline…',
+  state:      'Loading state-level demographics…',
+  configure:  'Preparing state data files and cache…',
+  predicting: 'Running AI pipeline — crunching numbers…',
 };
 
 export default function LoadingOverlay() {
@@ -27,20 +27,21 @@ export default function LoadingOverlay() {
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       className="fixed inset-0 z-50 flex flex-col items-center justify-center"
-      style={{ background: 'rgba(8,8,15,0.9)', backdropFilter: 'blur(12px)' }}
+      style={{ background: 'rgba(247,248,252,0.92)', backdropFilter: 'blur(16px)' }}
     >
-      {/* Animated rings */}
+      {/* Spinner rings */}
       <div className="relative w-24 h-24 mb-8">
         {[0, 1, 2].map(i => (
-          <motion.div key={i}
+          <motion.div
+            key={i}
             animate={{ rotate: 360 }}
-            transition={{ duration: 2 + i * 0.5, repeat: Infinity, ease: 'linear', delay: i * 0.2 }}
+            transition={{ duration: 1.8 + i * 0.4, repeat: Infinity, ease: 'linear', delay: i * 0.15 }}
             className="absolute inset-0 rounded-full border-2"
             style={{
-              borderColor: i === 0 ? '#7c3aed' : i === 1 ? '#06b6d4' : '#10b981',
+              borderColor: i === 0 ? '#6C4CF1' : i === 1 ? '#06b6d4' : '#22C55E',
               borderTopColor: 'transparent',
-              opacity: 1 - i * 0.2,
-              transform: `scale(${1 - i * 0.15})`,
+              opacity: 1 - i * 0.25,
+              inset: `${i * 10}px`,
             }}
           />
         ))}
@@ -49,22 +50,30 @@ export default function LoadingOverlay() {
         </div>
       </div>
 
-      {/* Status text */}
-      <h3 className="text-xl font-bold text-white mb-2">Processing…</h3>
-      <p className="text-slate-400 text-sm max-w-xs text-center">
+      {/* Text */}
+      <h3 className="text-xl font-bold text-ink mb-2">Processing…</h3>
+      <p className="text-ink-muted text-sm max-w-xs text-center">
         {loadingMsg || MESSAGES[step] || 'Working on it…'}
       </p>
 
-      {/* Step indicators */}
+      {/* Step dots */}
       <div className="flex items-center gap-2 mt-8">
         {STEPS_META.slice(0, 4).map((s, i) => (
           <React.Fragment key={s.id}>
-            <div className={`w-2 h-2 rounded-full transition-colors duration-300
-                            ${i <= idx ? 'bg-purple' : 'bg-white/10'}`} />
-            {i < 3 && <div className={`w-6 h-px ${i < idx ? 'bg-purple' : 'bg-white/10'}`} />}
+            <div
+              className={`w-2 h-2 rounded-full transition-all duration-300 ${
+                i <= idx ? 'bg-primary scale-110' : 'bg-ink-faint'
+              }`}
+            />
+            {i < 3 && (
+              <div className={`w-8 h-px transition-colors duration-300 ${i < idx ? 'bg-primary' : 'bg-ink-faint'}`} />
+            )}
           </React.Fragment>
         ))}
       </div>
+      <p className="text-[11px] text-ink-subtle mt-3">
+        Step {Math.max(idx + 1, 1)} of {STEPS_META.length - 1}
+      </p>
     </motion.div>
   );
 }
