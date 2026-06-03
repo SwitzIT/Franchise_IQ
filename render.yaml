@@ -7,6 +7,7 @@ services:
     plan: free
     dockerContext: .
     dockerfilePath: ./backend/Dockerfile
+    healthCheckPath: /health
 
     envVars:
       - key: CORS_ORIGINS
@@ -36,10 +37,12 @@ services:
 
     envVars:
       - key: VITE_API_URL
+        value: "https://franchise-iq-backend.onrender.com"
+      - key: VITE_API_URL_DYNAMIC
         fromService:
           name: franchise-iq-backend
           type: web
-          property: host   # ✅ FIXED
+          property: hostWithScheme   # ✅ FIXED
 
     routes:
       - type: rewrite

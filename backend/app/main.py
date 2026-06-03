@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.config import APP_TITLE, APP_VERSION, CORS_ORIGINS
+from app.config import APP_TITLE, APP_VERSION
 from app.routes import api_router
 from app.services.session_store import purge_expired
 from app.utils import get_logger
