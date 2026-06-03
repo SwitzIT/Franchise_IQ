@@ -1,5 +1,6 @@
 import axios from 'axios';
 
+// Force Render to rebuild the frontend so VITE_API_URL is properly injected
 const RAW_BASE = import.meta.env.VITE_API_URL || '';
 let BASE = RAW_BASE.replace(/\/+$/, '');
 if (BASE && !BASE.startsWith('http')) {
