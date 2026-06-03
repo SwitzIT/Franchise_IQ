@@ -19,11 +19,12 @@ from pathlib import Path
 from scipy.optimize import minimize
 
 from app.config import (
-    get_state_config, BUFFER_RADIUS_M, GRID_STEP_DEG, TOP_N_LOCATIONS,
+    get_state_config, get_real_estate_path, BUFFER_RADIUS_M, GRID_STEP_DEG, TOP_N_LOCATIONS,
 )
 from app.models.rf_model import FranchiseModel
 from app.services.amenities_service import count_amenities_near_points
 from app.services.clustering_service import assign_business_units
+from app.services.real_estate_service import load_and_preprocess_real_estate, enrich_with_real_estate
 from app.utils import (
     get_logger, haversine_vectorized, nearest_neighbor_index, safe_int, safe_float,
 )
@@ -111,22 +112,28 @@ def run_pipeline(
              f"| requests={len(requests_df) if requests_df is not None else 0} "
              f"| BU={has_bu}")
 
+    # Load Real Estate Data
+    re_path = get_real_estate_path(country, state)
+    re_gdf = gpd.GeoDataFrame()
+    if re_path:
+        re_gdf = load_and_preprocess_real_estate(re_path)
+
     # ── 1. Prepare stores ─────────────────────────────────────
     stores_df = _add_adjusted_sales(stores_df)
-    stores_df = _enrich(stores_df, demographics_df, amenities_gdf, stores_df, cfg, is_store=True)
+    stores_df = _enrich(stores_df, demographics_df, amenities_gdf, re_gdf, stores_df, cfg, is_store=True)
     if has_bu:
         stores_df = assign_business_units(stores_df, bu_df)
 
     # ── 2. Prepare candidates ─────────────────────────────────
     if requests_df is not None and not requests_df.empty:
         cands_df = _enrich(requests_df.copy(), demographics_df, amenities_gdf,
-                           stores_df, cfg, is_store=False)
+                           re_gdf, stores_df, cfg, is_store=False)
         if has_bu:
             cands_df = assign_business_units(cands_df, bu_df)
     else:
         cands_df = _generate_grid(cfg, demographics_df)
         cands_df = _enrich(cands_df, demographics_df, amenities_gdf,
-                           stores_df, cfg, is_store=False)
+                           re_gdf, stores_df, cfg, is_store=False)
         if has_bu:
             cands_df = assign_business_units(cands_df, bu_df)
 
@@ -187,6 +194,21 @@ def run_pipeline(
             })
         return records
 
+    def _real_estate_to_records(gdf):
+        if gdf is None or gdf.empty: return []
+        records = []
+        for idx, row in gdf.iterrows():
+            if not row.geometry or row.geometry.is_empty: continue
+            pt = row.geometry if row.geometry.geom_type == 'Point' else row.geometry.centroid
+            records.append({
+                "lat": safe_float(pt.y),
+                "lng": safe_float(pt.x),
+                "price": safe_float(row.get("price")),
+                "property_cost_index": safe_float(row.get("property_cost_index")),
+                "property_growth_score": safe_float(row.get("property_growth_score")),
+            })
+        return records
+
     region_stats = _compute_region_stats(stores_df, cands_df, demographics_df)
 
     return {
@@ -196,6 +218,7 @@ def run_pipeline(
         "requests":       _to_records(requests_df, "request") if requests_df is not None else [],
         "business_units": _to_records(bu_df, "bu") if has_bu else [],
         "amenities":      _amenities_to_records(amenities_gdf),
+        "real_estate":    _real_estate_to_records(re_gdf) if not re_gdf.empty else [],
         "kpis":           _compute_kpis(stores_df, top_df),
         "model_metrics":  train_metrics,
         "region_stats":   region_stats,
@@ -290,10 +313,11 @@ def _compute_region_stats(stores_df: pd.DataFrame, cands_df: pd.DataFrame, demog
 # ─────────────────────────────────────────────────────────────
 # FEATURE ENGINEERING
 # ─────────────────────────────────────────────────────────────
-def _enrich(df, demographics_df, amenities_gdf, stores_df, cfg, is_store):
+def _enrich(df, demographics_df, amenities_gdf, re_gdf, stores_df, cfg, is_store):
     df = count_amenities_near_points(df, amenities_gdf, buffer_m=BUFFER_RADIUS_M)
     df = _map_demographics(df, demographics_df)
     df = _competition_analysis(df, stores_df, is_store=is_store)
+    df = enrich_with_real_estate(df, re_gdf)
     df = _cannibalization(df)
     if cfg.get("default_kitchen"):
         ck_lat, ck_lon = cfg["default_kitchen"]
@@ -426,6 +450,12 @@ def _to_records(df, kind: str):
             "adjusted_final_score": safe_float(row.get("Adjusted_Final_Score", row.get("Final_Score", 0))),
             "district":  str(row.get("District", "")),
             "region":    str(row.get("Region", "Unassigned")),
+            "property_cost_index": safe_float(row.get("property_cost_index", 50.0)),
+            "market_saturation_score": safe_float(row.get("market_saturation_score", 0.0)),
+            "expansion_score": safe_float(row.get("expansion_score", 0.0)),
+            "property_growth_score": safe_float(row.get("property_growth_score", 0.0)),
+            "avg_property_price_3km": safe_float(row.get("avg_property_price_3km", 0.0)),
+            "avg_property_price_5km": safe_float(row.get("avg_property_price_5km", 0.0)),
         }
         records.append(r)
     return records

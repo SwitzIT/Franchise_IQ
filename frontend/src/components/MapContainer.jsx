@@ -89,14 +89,15 @@ function InfoCard({ d, avgSales }) {
           : 'linear-gradient(135deg,#dc2626,#EF4444)')
       : 'linear-gradient(135deg,#6C4CF1,#06b6d4)';
 
-  const rows = [
-    [d.type === 'store' ? 'Total Revenue' : 'Est. Revenue', cur(d.revenue)],
-    ['Population', d.population != null ? fmt(d.population) : null],
-    ['Avg Income', d.income > 0 ? cur(d.income) : null],
-    ['Nearest Store', d.nearest_store ? `${d.nearest_store} (${d.nearest_store_km?.toFixed(1)} km)` : null],
-    ['Business Unit', d.bu_name || null],
-    ['BU Distance', (['store','prediction','request'].includes(d.type) && d.bu_name) ? `${d.bu_dist_km?.toFixed(1)} km` : null],
-  ].filter(([, v]) => v != null);
+    const rows = [
+      [d.type === 'store' ? 'Total Revenue' : 'Est. Revenue', cur(d.revenue)],
+      ['Population', d.population != null ? fmt(d.population) : null],
+      ['Avg Income', d.income > 0 ? cur(d.income) : null],
+      ['Property Price', d.avg_property_price_3km > 0 ? cur(d.avg_property_price_3km) : (d.avg_property_price_5km > 0 ? cur(d.avg_property_price_5km) : 'N/A')],
+      ['Nearest Store', d.nearest_store ? `${d.nearest_store} (${d.nearest_store_km?.toFixed(1)} km)` : null],
+      ['Business Unit', d.bu_name || null],
+      ['BU Distance', (['store','prediction','request'].includes(d.type) && d.bu_name) ? `${d.bu_dist_km?.toFixed(1)} km` : null],
+    ].filter(([, v]) => v != null);
 
   return (
     <div style={{ fontFamily: 'Inter,system-ui,sans-serif', width: 280, padding: 0 }}>
@@ -174,11 +175,11 @@ const getAmenityEmoji = (type) => {
 
 // ─── Main Map ─────────────────────────────────────────────────
 export default function MapContainer_() {
-  const { results, stateConfig, mapLayers, storeFilter, selectedRegion } = useAppStore();
+  const { results, stateConfig, mapLayers, storeFilter, selectedRegion, currencySymbol } = useAppStore();
   const center = stateConfig?.center || [20, 78];
   const zoom   = stateConfig?.zoom   || 6;
 
-  const { stores, requests, predictions, business_units, amenities, avgSales, maxPredScore } = useMemo(() => {
+  const { stores, requests, predictions, business_units, amenities, real_estate, avgSales, maxPredScore } = useMemo(() => {
     const allStores = results?.stores || [];
     const allPreds  = results?.top_picks || [];
 
@@ -205,6 +206,7 @@ export default function MapContainer_() {
       predictions: filteredPreds,
       business_units: results?.business_units || [],
       amenities: results?.amenities || [],
+      real_estate: results?.real_estate || [],
       avgSales: avg,
       maxPredScore: maxS,
     };
@@ -325,6 +327,31 @@ export default function MapContainer_() {
           </Tooltip>
         </Marker>
       ))}
+
+      {/* ── Real Estate Data ────────────────────── */}
+      {mapLayers.realEstate && real_estate.length > 0 && real_estate.map((d, i) => {
+        const costIndex = d.property_cost_index || 50;
+        const growthScore = d.property_growth_score || 50;
+        // Radius based on cost (larger = more expensive)
+        const radius = 5 + (costIndex / 100) * 15;
+        // Color based on growth (green = high growth, red = low growth)
+        const color = growthScore > 60 ? '#22C55E' : growthScore < 40 ? '#EF4444' : '#F59E0B';
+        
+        return (
+          <CircleMarker key={`re-${i}`} center={[d.lat, d.lng]} radius={radius}
+            pathOptions={{ color, fillColor: color, fillOpacity: 0.5, weight: 1, opacity: 0.8 }}
+          >
+            <Tooltip sticky direction="top">
+              <div style={{ fontFamily:'Inter', minWidth:120 }}>
+                <div style={{ fontWeight:800, fontSize:13, color }}>Real Estate Data</div>
+                <div style={{ fontSize:11, color:'#6B7280', marginTop:2 }}>Price: {d.price ? `${currencySymbol || ''}${Math.round(d.price).toLocaleString()}` : 'N/A'}</div>
+                <div style={{ fontSize:11, color:'#6B7280' }}>Cost Index: {costIndex.toFixed(1)}</div>
+                <div style={{ fontSize:11, color:'#6B7280' }}>Growth Score: {growthScore.toFixed(1)}</div>
+              </div>
+            </Tooltip>
+          </CircleMarker>
+        );
+      })}
     </MapContainer>
   );
 }

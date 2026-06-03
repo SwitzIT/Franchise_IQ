@@ -21,6 +21,10 @@ services:
         value: "/app/outputs"
       - key: LOGS_DIR
         value: "/app/logs"
+      - key: DOWNLOADS_DIR
+        value: "/app/downloads"
+      - key: REAL_ESTATE_DIR
+        value: "/app/real_estate_data"
 
   # ─── FRONTEND ───────────────────────────────────────────────
   - type: web

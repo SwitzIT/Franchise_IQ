@@ -13,9 +13,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy backend app code
 COPY backend/ .
 
-# Copy demographics and map cache from the root
+# Copy demographics, cache, and preloaded datasets from the root
 COPY data/ ./data
 COPY amenities_cache/ ./amenities_cache
+COPY downloads/ ./downloads
+COPY real_estate_data/ ./real_estate_data
 
 EXPOSE 8000
 

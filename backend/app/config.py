@@ -18,8 +18,9 @@ UPLOADS_DIR       = Path(os.getenv("UPLOADS_DIR",       str(PROJECT_ROOT / "uplo
 OUTPUTS_DIR       = Path(os.getenv("OUTPUTS_DIR",       str(PROJECT_ROOT / "outputs")))
 LOGS_DIR          = Path(os.getenv("LOGS_DIR",          str(PROJECT_ROOT / "logs")))
 DOWNLOADS_DIR     = Path(os.getenv("DOWNLOADS_DIR",     str(PROJECT_ROOT / "downloads")))
+REAL_ESTATE_DIR   = Path(os.getenv("REAL_ESTATE_DIR",   str(PROJECT_ROOT / "real_estate_data")))
 
-for _d in [DATA_DIR, AMENITIES_DIR, UPLOADS_DIR, OUTPUTS_DIR, LOGS_DIR, DOWNLOADS_DIR]:
+for _d in [DATA_DIR, AMENITIES_DIR, UPLOADS_DIR, OUTPUTS_DIR, LOGS_DIR, DOWNLOADS_DIR, REAL_ESTATE_DIR]:
     _d.mkdir(parents=True, exist_ok=True)
 
 # ─────────────────────────────────────────────────────────────
@@ -47,6 +48,7 @@ COUNTRIES: dict = {
                 "stores_file":       "Mio_franchise_stores.xlsx",
                 "bu_file":           "Mio_business_unit.xlsx",
                 "requests_file":     None,
+                "real_estate_file":  "WestBengal_RealEstate.xlsx",
                 "center":       [22.9868, 87.8550],
                 "zoom":         8,
                 "grid_bounds":  [21.0, 27.5, 85.8, 89.9],   # [lat_min, lat_max, lon_min, lon_max]
@@ -58,6 +60,7 @@ COUNTRIES: dict = {
                 "stores_file":       None,
                 "bu_file":           None,
                 "requests_file":     None,
+                "real_estate_file":  None,
                 "center":       [20.9517, 85.0985],
                 "zoom":         7,
                 "grid_bounds":  [17.8, 22.6, 81.4, 87.5],
@@ -76,6 +79,7 @@ COUNTRIES: dict = {
                 "stores_file":       "srilanka_franchise_stores.xlsx",
                 "bu_file":           "Srilanka_central_kitchen.xlsx",
                 "requests_file":     "srilanka_franchise_requests.xlsx",
+                "real_estate_file":  "Srilanka_real_estate.xlsx",
                 "center":       [7.8731,  80.7718],
                 "zoom":         8,
                 "grid_bounds":  [5.8, 9.9, 79.5, 82.0],
@@ -162,6 +166,14 @@ def get_demographics_path(country: str, state: str) -> Path:
 def get_amenities_cache_path(country: str, state: str) -> Path:
     key = f"{country.lower().replace(' ', '_')}_{state.lower().replace(' ', '_')}"
     return AMENITIES_DIR / f"{key}.geojson"
+
+def get_real_estate_path(country: str, state: str) -> Path | None:
+    cfg = get_state_config(country, state)
+    fname = cfg.get("real_estate_file")
+    if fname:
+        p = REAL_ESTATE_DIR / fname
+        return p if p.exists() else None
+    return None
 
 
 def get_downloads_path(filename: str) -> Path:

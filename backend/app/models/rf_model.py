@@ -23,6 +23,14 @@ FEATURE_COLS = [
     "Nearest_Store_km", "stores_2km", "stores_5km",
     "Cannibalization_Score",
 ]
+RE_FEATURE_COLS = [
+    "property_cost_index", "property_growth_score",
+    "avg_property_price_3km", "avg_rent_3km", "commercial_count_3km",
+    "commercial_density_3km", "property_growth_3km", "vacancy_rate_3km",
+    "income_property_ratio", "amenity_growth_score",
+    "population_commercial_score", "franchise_density_score",
+    "market_saturation_score"
+]
 BU_FEATURE_COLS = ["BU_Dist_km", "BU_Weight"]
 
 
@@ -98,6 +106,12 @@ class FranchiseModel:
         else:
             std = raw_preds * 0.15  # fallback: 15% CI
 
+        # Enhance Confidence Intervals with real estate uncertainty
+        if "property_growth_3km" in df.columns and "vacancy_rate_3km" in df.columns:
+            # Widen interval if high volatility / sparse data
+            uncertainty_multiplier = 1.0 + (df["property_growth_3km"] / 100.0) * 0.2 + (df["vacancy_rate_3km"] * 0.5)
+            std = std * uncertainty_multiplier.values
+
         df["Predicted_Revenue"] = raw_preds
         df["Rev_Lower"]         = np.clip(raw_preds - 1.65 * std, 0, None)
         df["Rev_Upper"]         = raw_preds + 1.65 * std
@@ -112,6 +126,7 @@ class FranchiseModel:
     # ─────────────────────────────────────────────────────────────
     def _select_features(self, df: pd.DataFrame, has_bu: bool) -> list[str]:
         cols = [c for c in FEATURE_COLS if c in df.columns]
+        cols += [c for c in RE_FEATURE_COLS if c in df.columns]
         if has_bu:
             cols += [c for c in BU_FEATURE_COLS if c in df.columns]
         return cols

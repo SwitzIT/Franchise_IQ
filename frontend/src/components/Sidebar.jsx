@@ -12,6 +12,7 @@ const LAYERS = [
   { key: 'predictions',   label: 'Predictions',        color: '#22C55E' },
   { key: 'businessUnits', label: 'Business Units',     color: '#F59E0B' },
   { key: 'amenities',     label: 'Amenities',          color: '#06B6D4' },
+  { key: 'realEstate',    label: 'Real Estate Data',   color: '#EC4899' },
 ];
 
 export default function AppSidebar({ activeNav, setActiveNav }) {
