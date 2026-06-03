@@ -10,7 +10,7 @@ services:
 
     envVars:
       - key: CORS_ORIGINS
-        value: "https://franchise-iq-frontend.onrender.com"
+        value: "*"
       - key: DATA_DIR
         value: "/app/data"
       - key: AMENITIES_DIR
