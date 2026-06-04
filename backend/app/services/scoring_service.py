@@ -204,6 +204,7 @@ def run_pipeline(
                 "lat": safe_float(pt.y),
                 "lng": safe_float(pt.x),
                 "price": safe_float(row.get("price")),
+                "rent": safe_float(row.get("rent")),
                 "property_cost_index": safe_float(row.get("property_cost_index")),
                 "property_growth_score": safe_float(row.get("property_growth_score")),
             })

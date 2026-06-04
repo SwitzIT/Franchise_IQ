@@ -344,7 +344,9 @@ export default function MapContainer_() {
             <Tooltip sticky direction="top">
               <div style={{ fontFamily:'Inter', minWidth:120 }}>
                 <div style={{ fontWeight:800, fontSize:13, color }}>Real Estate Data</div>
-                <div style={{ fontSize:11, color:'#6B7280', marginTop:2 }}>Price: {d.price ? `${currencySymbol || ''}${Math.round(d.price).toLocaleString()}` : 'N/A'}</div>
+                <div style={{ fontSize:11, color:'#6B7280', marginTop:2 }}>
+                  {d.price ? `Price: ${currencySymbol || ''}${Math.round(d.price).toLocaleString()}` : d.rent ? `Rent: ${currencySymbol || ''}${Math.round(d.rent).toLocaleString()}` : 'Price/Rent: N/A'}
+                </div>
                 <div style={{ fontSize:11, color:'#6B7280' }}>Cost Index: {costIndex.toFixed(1)}</div>
                 <div style={{ fontSize:11, color:'#6B7280' }}>Growth Score: {growthScore.toFixed(1)}</div>
               </div>

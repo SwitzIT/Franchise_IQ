@@ -23,6 +23,7 @@ def load_and_preprocess_real_estate(file_path: str) -> gpd.GeoDataFrame:
     rename_map = {
         'commercial_sale_price': 'price',
         'price (lkr) min': 'price',
+        'avg price (₹/sqft)': 'price',
         'approx. usd (mid)': 'price_usd',
         'commercial_rent': 'rent',
         'yoy change': 'annual_appreciation',
@@ -31,6 +32,8 @@ def load_and_preprocess_real_estate(file_path: str) -> gpd.GeoDataFrame:
         'latitude': 'lat',
         'longitude': 'lon',
         'city / area': 'city',
+        'locality / city': 'city',
+        'district / region': 'district',
         'district': 'district',
         'property type': 'property_type',
         'unit': 'unit'
@@ -50,6 +53,13 @@ def load_and_preprocess_real_estate(file_path: str) -> gpd.GeoDataFrame:
     if 'annual_appreciation' in df.columns:
         df['annual_appreciation'] = df['annual_appreciation'].astype(str).str.extract(r'([+-]?\d+\.?\d*)')[0].astype(float)
         
+    # Clean currency symbols and commas before converting to numeric
+    for col in ['price', 'rent']:
+        if col in df.columns:
+            # Keep digits and decimals, replace everything else
+            cleaned = df[col].astype(str).str.replace(r'[^\d.]', '', regex=True).replace('', '0')
+            df[col] = cleaned
+
     # Fill missing values defensively
     cols_to_fill = ['price', 'rent', 'annual_appreciation', 'vacancy_rate', 'market_trend', 'property_size']
     for col in cols_to_fill:
