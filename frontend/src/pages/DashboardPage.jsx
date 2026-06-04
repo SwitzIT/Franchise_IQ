@@ -306,6 +306,18 @@ export default function DashboardPage() {
                 color="#8B5CF6"
                 delay={0.24}
               />
+              <KPICard
+                icon={MapPin}
+                label="Top Region"
+                value={regionKpis?.best_region || '—'}
+                sub={
+                  regionKpis?.regions?.[0]
+                    ? `${cur(regionKpis.regions[0].avg_revenue)} avg · ${regionKpis.regions[0].store_count} store${regionKpis.regions[0].store_count !== 1 ? 's' : ''}`
+                    : 'Run analysis first'
+                }
+                color="#10B981"
+                delay={0.30}
+              />
             </div>
           )}
 
