@@ -192,3 +192,8 @@ export const analyseTerritory = async (sessionId, country, territory, resolution
 // ── Download ─────────────────────────────────────────────────────────
 export const getDownloadUrl = (session_id) =>
   `${BASE}/api/download_results?session_id=${session_id}`;
+export const getDistrictPerformance = async (sessionId) => {
+  const { data } = await api.get('/district-performance', { params: { session_id: sessionId } });
+  return data;
+};
+

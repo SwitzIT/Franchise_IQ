@@ -112,8 +112,8 @@ def aggregate_stores_by_district(
         return {
             "districts": [], "network_avg": 0.0,
             "total_stores": 0, "total_districts": 0,
-            "thresholds": {"above_pct": above_threshold * 100,
-                           "below_pct": below_threshold * 100},
+            "thresholds": {"above_pct": round(above_threshold * 100, 1),
+                           "below_pct": round(below_threshold * 100, 1)},
         }
 
     # Step 1: enrich any stores missing district info
@@ -190,6 +190,6 @@ def aggregate_stores_by_district(
         "network_avg":     round(network_avg, 2),
         "total_stores":    len(stores),
         "total_districts": len(districts_out),
-        "thresholds":      {"above_pct": above_threshold * 100,
-                            "below_pct": below_threshold * 100},
+        "thresholds":      {"above_pct": round(above_threshold * 100, 1),
+                            "below_pct": round(below_threshold * 100, 1)},
     }

@@ -28,7 +28,8 @@ _ROUTE_MODULES = [
     "analytics",         # /region-kpis, /hex-heatmap, /peer-context, /untapped-demand
     "validation",        # /validate-stores, /validate-session
     "competitors",       # /competitors/*
-    "site_discovery",    # /site-discovery/*
+    "site_discovery",
+    "districts",    # /site-discovery/*
 ]
 
 

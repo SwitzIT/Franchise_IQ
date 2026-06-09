@@ -119,9 +119,9 @@ export default function AppSidebar({ activeNav, setActiveNav }) {
 
               className={`flex-1 px-2 py-1.5 rounded text-xs font-medium transition-all ${viewMode === 'hex'
 
-                  ? 'bg-white shadow text-ink'
+                ? 'bg-white shadow text-ink'
 
-                  : 'text-ink-muted hover:text-ink'
+                : 'text-ink-muted hover:text-ink'
 
                 }`}
             >
@@ -134,9 +134,9 @@ export default function AppSidebar({ activeNav, setActiveNav }) {
 
               className={`flex-1 px-2 py-1.5 rounded text-xs font-medium transition-all ${viewMode === 'district'
 
-                  ? 'bg-white shadow text-ink'
+                ? 'bg-white shadow text-ink'
 
-                  : 'text-ink-muted hover:text-ink'
+                : 'text-ink-muted hover:text-ink'
 
                 }`}
             >

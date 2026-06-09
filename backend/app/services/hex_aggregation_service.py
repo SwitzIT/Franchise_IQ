@@ -116,8 +116,8 @@ def compute_hex_heatmap(
         resolution = max(MIN_RESOLUTION, min(MAX_RESOLUTION, int(resolution)))
 
     thresholds_out = {
-        "above_pct": above_threshold * 100,
-        "below_pct": below_threshold * 100,
+        "above_pct": round(above_threshold * 100, 1),
+        "below_pct": round(below_threshold * 100, 1),
     }
 
     if not stores:

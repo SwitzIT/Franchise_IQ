@@ -21,6 +21,10 @@ const useAppStore = create((set, get) => ({
   mode: 'network_performance',
   setMode: (mode) => set({ mode }),
 
+  // View Mode (Hex vs District)
+  viewMode: 'hex',
+  setViewMode: (m) => set({ viewMode: m }),
+
   // ── Session ──────────────────────────────────────────────────
   sessionId: null,
   setSessionId: (id) => set({ sessionId: id }),

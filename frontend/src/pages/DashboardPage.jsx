@@ -13,15 +13,17 @@ import KPICard from '../components/KPICard';
 import OpportunityPanel from '../components/OpportunityPanel';
 import ChatPanel from '../components/ChatPanel';
 import { getHexHeatmap } from '../services/api';
-// import DistrictPerformancePanel from '../components/DistrictPerformancePanel'; // ... <DistrictPerformancePanel />
+import DistrictPerformancePanel from '../components/DistrictPerformancePanel';
 
 const LazyMap = React.lazy(() => import('../components/MapContainer'));
 
 // ─── Dropdown filter pill (unchanged) ─────────────────────────
 function FilterDropdown({ icon: Icon, label, items, selectedName, onSelect, placeholder = 'All' }) {
   const [open, setOpen] = useState(false);
+  const [filterSearch, setFilterSearch] = useState('');
   const btnRef = useRef(null);
   const panelRef = useRef(null);
+  const searchRef = useRef(null);
   const [pos, setPos] = useState({ top: 0, left: 0 });
 
   useEffect(() => {
@@ -29,11 +31,20 @@ function FilterDropdown({ icon: Icon, label, items, selectedName, onSelect, plac
       if (btnRef.current && !btnRef.current.contains(e.target) &&
         panelRef.current && !panelRef.current.contains(e.target)) {
         setOpen(false);
+        setFilterSearch('');
       }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
+
+  // Auto-focus the search box when dropdown opens
+  useEffect(() => {
+    if (open && searchRef.current) {
+      setTimeout(() => searchRef.current?.focus(), 50);
+    }
+    if (!open) setFilterSearch('');
+  }, [open]);
 
   const handleToggle = () => {
     if (!open && btnRef.current) {
@@ -44,6 +55,15 @@ function FilterDropdown({ icon: Icon, label, items, selectedName, onSelect, plac
   };
 
   const isActive = selectedName != null;
+
+  // Case-insensitive contains filter
+  const q = filterSearch.trim().toLowerCase();
+  const filteredItems = q
+    ? items.filter(it => (it.name || '').toLowerCase().includes(q))
+    : items;
+
+  // Show search only when there are enough items to make it worthwhile
+  const showSearch = items.length > 8;
 
   return (
     <>
@@ -63,36 +83,62 @@ function FilterDropdown({ icon: Icon, label, items, selectedName, onSelect, plac
           className="rounded-xl shadow-card-lg border border-border overflow-hidden"
           style={{
             position: 'fixed', top: pos.top, left: pos.left, zIndex: 99999,
-            background: '#FFFFFF', minWidth: 200, maxHeight: 280, overflowY: 'auto',
+            background: '#FFFFFF', minWidth: 240, maxHeight: 360, display: 'flex', flexDirection: 'column',
           }}
         >
-          <button
-            onClick={() => { onSelect(null); setOpen(false); }}
-            className="w-full text-left px-4 py-2.5 text-xs text-ink-muted hover:bg-app-bg transition-colors border-b border-border font-semibold"
-          >
-            All {label}
-          </button>
-          {items.length === 0 && (
-            <div className="px-4 py-3 text-xs text-ink-subtle">No data available</div>
+          {showSearch && (
+            <div className="border-b border-border bg-app-bg/40 p-2 shrink-0">
+              <div className="relative">
+                <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-subtle pointer-events-none" />
+                <input
+                  ref={searchRef}
+                  type="text"
+                  value={filterSearch}
+                  onChange={(e) => setFilterSearch(e.target.value)}
+                  placeholder={`Search ${items.length} ${label.toLowerCase()}...`}
+                  className="w-full text-xs pl-7 pr-2 py-1.5 rounded-md border border-border
+                             bg-white focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10"
+                />
+              </div>
+              {q && (
+                <div className="text-[10px] text-ink-subtle mt-1 px-1">
+                  {filteredItems.length} of {items.length} match
+                </div>
+              )}
+            </div>
           )}
-          {items.map((item, i) => (
+
+          <div className="overflow-y-auto flex-1">
             <button
-              key={i}
-              onClick={() => { onSelect(item.name); setOpen(false); }}
-              className={`w-full text-left px-4 py-2 text-xs transition-colors flex items-center gap-2
-                ${selectedName === item.name ? 'bg-primary/10 text-primary font-semibold' : 'text-ink hover:bg-app-bg'}`}
+              onClick={() => { onSelect(null); setOpen(false); }}
+              className="w-full text-left px-4 py-2.5 text-xs text-ink-muted hover:bg-app-bg transition-colors border-b border-border font-semibold"
             >
-              {item.rank != null && (
-                <span className="text-[10px] font-bold text-ink-subtle w-5 shrink-0">#{item.rank}</span>
-              )}
-              <span className="truncate flex-1">{item.name}</span>
-              {item.score != null && (
-                <span className="text-[10px] font-mono text-ink-subtle shrink-0 tabular-nums">
-                  {item.score.toFixed(1)}
-                </span>
-              )}
+              All {label}
             </button>
-          ))}
+            {filteredItems.length === 0 && (
+              <div className="px-4 py-3 text-xs text-ink-subtle">
+                {q ? `No matches for "${filterSearch}"` : 'No data available'}
+              </div>
+            )}
+            {filteredItems.map((item, i) => (
+              <button
+                key={i}
+                onClick={() => { onSelect(item.name); setOpen(false); }}
+                className={`w-full text-left px-4 py-2 text-xs transition-colors flex items-center gap-2
+                  ${selectedName === item.name ? 'bg-primary/10 text-primary font-semibold' : 'text-ink hover:bg-app-bg'}`}
+              >
+                {item.rank != null && (
+                  <span className="text-[10px] font-bold text-ink-subtle w-5 shrink-0">#{item.rank}</span>
+                )}
+                <span className="truncate flex-1">{item.name}</span>
+                {item.score != null && (
+                  <span className="text-[10px] font-mono text-ink-subtle shrink-0 tabular-nums">
+                    {item.score.toFixed(1)}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
         </div>,
         document.body
       )}
@@ -571,6 +617,7 @@ export default function DashboardPage() {
         </MobileBottomSheet>
       )}
 
+      <DistrictPerformancePanel />
       {results && <ChatPanel />}
     </div>
   );
