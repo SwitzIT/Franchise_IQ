@@ -5,18 +5,18 @@ import {
   Store, Activity, FileText, Star, Building2, Sparkles,
   MapPin, Bell, ChevronDown, ChevronUp, Search, Trophy,
   Layers, Eye, EyeOff, TrendingUp, TrendingDown, Filter,
-  Maximize2, Minimize2, X
+  Maximize2, Minimize2, X, Menu, Hexagon, Zap
 } from 'lucide-react';
 import useAppStore from '../store/useAppStore';
 import AppSidebar from '../components/Sidebar';
 import KPICard from '../components/KPICard';
 import OpportunityPanel from '../components/OpportunityPanel';
-
 import ChatPanel from '../components/ChatPanel';
+import { getHexHeatmap } from '../services/api';
 
 const LazyMap = React.lazy(() => import('../components/MapContainer'));
 
-// ─── Dropdown filter pill ──────────────────────────────────────
+// ─── Dropdown filter pill (unchanged) ─────────────────────────
 function FilterDropdown({ icon: Icon, label, items, selectedName, onSelect, placeholder = 'All' }) {
   const [open, setOpen] = useState(false);
   const btnRef = useRef(null);
@@ -61,14 +61,8 @@ function FilterDropdown({ icon: Icon, label, items, selectedName, onSelect, plac
           ref={panelRef}
           className="rounded-xl shadow-card-lg border border-border overflow-hidden"
           style={{
-            position: 'fixed',
-            top: pos.top,
-            left: pos.left,
-            zIndex: 99999,
-            background: '#FFFFFF',
-            minWidth: 200,
-            maxHeight: 280,
-            overflowY: 'auto',
+            position: 'fixed', top: pos.top, left: pos.left, zIndex: 99999,
+            background: '#FFFFFF', minWidth: 200, maxHeight: 280, overflowY: 'auto',
           }}
         >
           <button
@@ -105,6 +99,61 @@ function FilterDropdown({ icon: Icon, label, items, selectedName, onSelect, plac
   );
 }
 
+// ─── Resolution selector (inline in legend) ────────────────────
+// Shows current resolution + tiny dropdown to override or revert to auto.
+function HexResolutionControl() {
+  const {
+    hexHeatmap, hexResolutionOverride, setHexResolutionOverride,
+  } = useAppStore();
+
+  if (!hexHeatmap) return null;
+
+  const current = hexHeatmap.resolution;
+  const isAuto = hexHeatmap.auto_selected && hexResolutionOverride == null;
+  const totalCells = hexHeatmap.total_cells;
+
+  // H3 resolutions 4-9 with human-readable scales
+  const options = [
+    { value: null, label: 'Auto', hint: 'Adapts to your data' },
+    { value: 4, label: 'Res 4', hint: 'Country (~1,770 km²)' },
+    { value: 5, label: 'Res 5', hint: 'Large region (~252 km²)' },
+    { value: 6, label: 'Res 6', hint: 'State / district (~36 km²)' },
+    { value: 7, label: 'Res 7', hint: 'City (~5 km²)' },
+    { value: 8, label: 'Res 8', hint: 'Neighbourhood (~0.7 km²)' },
+    { value: 9, label: 'Res 9', hint: 'Street block (~0.1 km²)' },
+  ];
+
+  return (
+    <div className="mt-2 pt-2 border-t border-border flex items-center justify-between gap-2">
+      <div className="flex items-center gap-1.5 text-[10px]">
+        <Zap size={9} className={isAuto ? 'text-primary' : 'text-ink-subtle'} />
+        <span className="text-ink-subtle">
+          {isAuto ? (
+            <>Auto · <span className="font-semibold text-ink">res {current}</span> · {totalCells} zones</>
+          ) : (
+            <>Manual · <span className="font-semibold text-ink">res {current}</span> · {totalCells} zones</>
+          )}
+        </span>
+      </div>
+      <select
+        value={hexResolutionOverride ?? ''}
+        onChange={(e) => {
+          const v = e.target.value;
+          setHexResolutionOverride(v === '' ? null : Number(v));
+        }}
+        className="text-[10px] bg-surface border border-border rounded px-1.5 py-0.5 text-ink focus:outline-none focus:border-primary/40"
+        title="Override hex resolution"
+      >
+        {options.map(opt => (
+          <option key={opt.value ?? 'auto'} value={opt.value ?? ''}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 // ─── Map Legend ────────────────────────────────────────────────
 function MapLegend() {
   const [open, setOpen] = useState(true);
@@ -116,6 +165,7 @@ function MapLegend() {
             key="legend-open"
             initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }}
             className="bg-white/95 backdrop-blur-sm border border-border rounded-xl shadow-card-md p-3.5 text-xs"
+            style={{ minWidth: 220 }}
           >
             <div className="flex items-center justify-between mb-2.5">
               <span className="text-[10px] font-bold text-ink-subtle uppercase tracking-wider">Legend</span>
@@ -123,19 +173,51 @@ function MapLegend() {
                 <X size={11} className="text-ink-subtle" />
               </button>
             </div>
-            <div className="space-y-1.5">
-              {[
-                { color: '#3B82F6', label: 'Existing Stores' },
-                { color: '#8B5CF6', label: 'Franchise Requests' },
-                { color: '#22C55E', label: 'High Opportunity' },
-                { color: '#F59E0B', label: 'Med. Opportunity' },
-                { color: '#EF4444', label: 'Low Opportunity' },
-              ].map(({ color, label }) => (
-                <div key={label} className="flex items-center gap-2 text-ink-muted">
-                  <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: color }} />
-                  <span>{label}</span>
-                </div>
-              ))}
+
+            {/* Zone Performance section — top because it's the primary visual */}
+            <div className="mb-2.5 pb-2.5 border-b border-border">
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <Hexagon size={10} className="text-ink-subtle" />
+                <span className="text-[9px] font-semibold text-ink-subtle uppercase tracking-wider">
+                  Zone Performance
+                </span>
+              </div>
+              <div className="space-y-1">
+                {[
+                  { color: '#22C55E', label: 'Above network avg' },
+                  { color: '#F59E0B', label: 'On target' },
+                  { color: '#EF4444', label: 'Below network avg' },
+                ].map(({ color, label }) => (
+                  <div key={label} className="flex items-center gap-2 text-ink-muted">
+                    <span className="w-3 h-3 rounded-sm shrink-0 border" style={{ backgroundColor: color + '55', borderColor: color }} />
+                    <span>{label}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Resolution control — adapts per dataset */}
+              <HexResolutionControl />
+            </div>
+
+            {/* Pins section */}
+            <div>
+              <div className="text-[9px] font-semibold text-ink-subtle uppercase tracking-wider mb-1.5">
+                Markers
+              </div>
+              <div className="space-y-1">
+                {[
+                  { color: '#3B82F6', label: 'Existing Stores' },
+                  { color: '#8B5CF6', label: 'Franchise Requests' },
+                  { color: '#22C55E', label: 'High Opportunity' },
+                  { color: '#F59E0B', label: 'Med. Opportunity' },
+                  { color: '#EF4444', label: 'Low Opportunity' },
+                ].map(({ color, label }) => (
+                  <div key={label} className="flex items-center gap-2 text-ink-muted">
+                    <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                    <span>{label}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           </motion.div>
         ) : (
@@ -162,12 +244,41 @@ const STORE_FILTERS = [
   { key: 'below', label: 'Below Avg',   icon: TrendingDown },
 ];
 
+// ─── Mobile Bottom Sheet for Opportunity Panel ────────────────
+function MobileBottomSheet({ children }) {
+  const { mobileSheetOpen, setMobileSheetOpen } = useAppStore();
+  return (
+    <motion.div
+      animate={{ y: mobileSheetOpen ? '0%' : '70%' }}
+      transition={{ type: 'spring', damping: 28, stiffness: 280 }}
+      className="lg:hidden fixed inset-x-0 bottom-0 z-30 bg-surface border-t border-border rounded-t-2xl shadow-card-lg flex flex-col"
+      style={{ height: '80vh' }}
+    >
+      <button
+        onClick={() => setMobileSheetOpen(!mobileSheetOpen)}
+        className="shrink-0 py-2 flex flex-col items-center"
+        aria-label={mobileSheetOpen ? 'Collapse panel' : 'Expand panel'}
+      >
+        <div className="w-10 h-1 rounded-full bg-ink-faint mb-1" />
+        <div className="text-[10px] font-semibold text-ink-subtle uppercase tracking-widest">
+          {mobileSheetOpen ? 'Tap to collapse' : 'Top opportunities · Tap to expand'}
+        </div>
+      </button>
+      <div className="flex-1 overflow-hidden p-3">
+        {children}
+      </div>
+    </motion.div>
+  );
+}
+
 // ─── Main Dashboard ────────────────────────────────────────────
 export default function DashboardPage() {
   const {
     results, regionKpis, selectedRegion, setSelectedRegion,
     country, state, currencySymbol, selectedStoreName, flyToStore,
     hasBU, storeFilter, setStoreFilter,
+    sessionId, hexResolutionOverride, setHexHeatmap, setHexLoading,
+    setMobileSidebarOpen,
   } = useAppStore();
 
   const kpis = results?.kpis || {};
@@ -191,6 +302,26 @@ export default function DashboardPage() {
     }
   };
 
+  // ── Fetch hex heatmap on results-load and on resolution override change ──
+  // Passing `null` to getHexHeatmap → backend auto-picks resolution.
+  // Passing a number → caller forces that resolution.
+  useEffect(() => {
+    if (!sessionId || !results || stores.length === 0) {
+      setHexHeatmap(null);
+      return;
+    }
+    let cancelled = false;
+    setHexLoading(true);
+    getHexHeatmap(sessionId, hexResolutionOverride)
+      .then((data) => { if (!cancelled) setHexHeatmap(data); })
+      .catch((err) => {
+        console.error('Hex heatmap fetch failed:', err);
+        if (!cancelled) setHexHeatmap(null);
+      })
+      .finally(() => { if (!cancelled) setHexLoading(false); });
+    return () => { cancelled = true; };
+  }, [sessionId, results, hexResolutionOverride, stores.length, setHexHeatmap, setHexLoading]);
+
   const cur = (val) => {
     if (val == null) return '—';
     if (country === 'India') {
@@ -205,48 +336,49 @@ export default function DashboardPage() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-app-bg">
-      {/* ── Left Sidebar ──────────────────────────── */}
       {!isFullscreen && (
         <AppSidebar activeNav={activeNav} setActiveNav={setActiveNav} />
       )}
 
-      {/* ── Right Main Area ───────────────────────── */}
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
 
         {/* ── Top Header Bar ──────────────────────── */}
         {!isFullscreen && (
-          <header className="flex items-center gap-4 px-6 py-3.5 bg-surface border-b border-border shrink-0">
-            {/* Breadcrumb */}
-            <div className="flex items-center gap-1.5 text-sm">
-              <span className="text-ink-muted font-medium">
+          <header className="flex items-center gap-3 px-4 sm:px-6 py-3 bg-surface border-b border-border shrink-0">
+            <button
+              onClick={() => setMobileSidebarOpen(true)}
+              className="lg:hidden p-2 -ml-1 rounded-lg hover:bg-app-bg text-ink-muted"
+              aria-label="Open menu"
+            >
+              <Menu size={18} />
+            </button>
+
+            <div className="flex items-center gap-1.5 text-sm min-w-0">
+              <span className="text-ink-muted font-medium truncate">
                 {country || 'Global'}
               </span>
               {state && (
                 <>
                   <span className="text-ink-faint">/</span>
-                  <span className="text-ink font-semibold">{state}</span>
+                  <span className="text-ink font-semibold truncate">{state}</span>
                 </>
               )}
             </div>
 
-            {/* Spacer */}
             <div className="flex-1" />
 
-            {/* Status pill */}
             {results && (
-              <span className="badge-success flex items-center gap-1.5">
+              <span className="hidden sm:inline-flex badge-success items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-success inline-block" />
                 Analysis Complete
               </span>
             )}
 
-            {/* Notification icon */}
             <button className="btn-ghost p-2 rounded-xl relative">
               <Bell size={17} className="text-ink-subtle" />
               <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-primary" />
             </button>
 
-            {/* User avatar */}
             <div className="flex items-center gap-2.5 pl-2 border-l border-border cursor-pointer group">
               <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-primary-light flex items-center justify-center text-white text-sm font-bold shrink-0">
                 A
@@ -255,17 +387,16 @@ export default function DashboardPage() {
                 <p className="text-xs font-semibold text-ink leading-none">Admin</p>
                 <p className="text-[10px] text-ink-muted mt-0.5">Analyst</p>
               </div>
-              <ChevronDown size={13} className="text-ink-subtle group-hover:text-ink transition-colors" />
+              <ChevronDown size={13} className="text-ink-subtle group-hover:text-ink transition-colors hidden sm:block" />
             </div>
           </header>
         )}
 
-        {/* ── Scrollable Content ───────────────────── */}
         <div className="flex-1 overflow-hidden flex flex-col min-h-0">
 
-          {/* ── KPI Cards Row ────────────────────── */}
+          {/* ── KPI Cards Row ─────────── */}
           {!isFullscreen && (
-            <div className="flex items-stretch gap-4 px-6 py-4 border-b border-border shrink-0 overflow-x-auto">
+            <div className="flex items-stretch gap-3 px-4 sm:px-6 py-3 sm:py-4 border-b border-border shrink-0 overflow-x-auto">
               <KPICard
                 icon={Store}
                 label="Total Stores"
@@ -321,15 +452,14 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* ── Filter Bar ───────────────────────── */}
+          {/* ── Filter Bar ──────────── */}
           {!isFullscreen && (
-            <div className="flex items-center gap-3 px-6 py-3 border-b border-border bg-surface shrink-0 overflow-x-auto">
+            <div className="flex items-center gap-2 sm:gap-3 px-4 sm:px-6 py-2.5 border-b border-border bg-surface shrink-0 overflow-x-auto">
               <div className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted shrink-0">
                 <Filter size={13} />
-                Filters:
+                <span className="hidden sm:inline">Filters:</span>
               </div>
 
-              {/* Franchise Store */}
               <FilterDropdown
                 icon={Building2}
                 label="Franchise Store"
@@ -338,7 +468,6 @@ export default function DashboardPage() {
                 onSelect={(name) => flyToStore(name)}
               />
 
-              {/* Top Predictions */}
               <FilterDropdown
                 icon={Trophy}
                 label="Top Predictions"
@@ -347,7 +476,6 @@ export default function DashboardPage() {
                 onSelect={(name) => flyToPrediction(name)}
               />
 
-              {/* Region */}
               {regionItems.length > 0 && (
                 <FilterDropdown
                   icon={MapPin}
@@ -358,8 +486,7 @@ export default function DashboardPage() {
                 />
               )}
 
-              {/* Store Performance */}
-              <div className="flex items-center gap-1.5 ml-1">
+              <div className="flex items-center gap-1.5 ml-1 shrink-0">
                 {STORE_FILTERS.map(({ key, label, icon: Ico }) => (
                   <button
                     key={key}
@@ -367,12 +494,12 @@ export default function DashboardPage() {
                     className={`filter-pill ${storeFilter === key ? 'active' : ''}`}
                   >
                     {Ico && <Ico size={11} />}
-                    {label}
+                    <span className="hidden sm:inline">{label}</span>
+                    <span className="sm:hidden">{key === 'all' ? 'All' : key === 'above' ? '▲' : '▼'}</span>
                   </button>
                 ))}
               </div>
 
-              {/* Reset */}
               {(selectedStoreName || selectedPrediction || selectedRegion || storeFilter !== 'all') && (
                 <button
                   onClick={() => {
@@ -384,18 +511,16 @@ export default function DashboardPage() {
                   className="btn-ghost text-xs text-danger ml-auto shrink-0"
                 >
                   <X size={12} />
-                  Reset Filters
+                  <span className="hidden sm:inline">Reset Filters</span>
+                  <span className="sm:hidden">Reset</span>
                 </button>
               )}
-
-
             </div>
           )}
 
-          {/* ── Main 2-col content ───────────────── */}
+          {/* ── Main 2-col content ─── */}
           <div className="flex-1 flex overflow-hidden min-h-0">
-            {/* Map column (70%) */}
-            <div className="flex-1 relative overflow-hidden min-h-0 p-4 pr-2">
+            <div className="flex-1 relative overflow-hidden min-h-0 p-2 sm:p-4 lg:pr-2">
               <div className="relative h-full rounded-2xl overflow-hidden border border-border shadow-card">
                 <Suspense fallback={
                   <div className="w-full h-full flex items-center justify-center bg-surface-2">
@@ -408,10 +533,8 @@ export default function DashboardPage() {
                   <LazyMap />
                 </Suspense>
 
-                {/* Map legend overlay */}
                 <MapLegend />
 
-                {/* Fullscreen toggle */}
                 <button
                   onClick={() => setIsFullscreen(v => !v)}
                   className="absolute top-3 right-3 z-[1000] bg-white border border-border rounded-xl p-2 shadow-card hover:border-primary/30 hover:bg-primary/5 transition-all"
@@ -425,9 +548,8 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* Opportunity panel (30%) */}
             {!isFullscreen && (
-              <div className="w-80 shrink-0 p-4 pl-2 overflow-hidden min-h-0">
+              <div className="hidden lg:block w-80 shrink-0 p-4 pl-2 overflow-hidden min-h-0">
                 <OpportunityPanel
                   onSelectPrediction={(name) => flyToPrediction(name)}
                   selectedPrediction={selectedPrediction}
@@ -436,11 +558,18 @@ export default function DashboardPage() {
             )}
           </div>
 
-
         </div>
       </div>
 
-      {/* ── Chat Assistant overlay ─────────────── */}
+      {!isFullscreen && results && (
+        <MobileBottomSheet>
+          <OpportunityPanel
+            onSelectPrediction={(name) => flyToPrediction(name)}
+            selectedPrediction={selectedPrediction}
+          />
+        </MobileBottomSheet>
+      )}
+
       {results && <ChatPanel />}
     </div>
   );

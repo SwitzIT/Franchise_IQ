@@ -1,5 +1,5 @@
 import React, { useMemo, useEffect } from 'react';
-import { MapContainer, TileLayer, CircleMarker, Marker, Popup, Tooltip, ZoomControl, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, CircleMarker, Marker, Polygon, Popup, Tooltip, ZoomControl, useMap } from 'react-leaflet';
 import MarkerClusterGroup from 'react-leaflet-cluster';
 import L from 'leaflet';
 import useAppStore from '../store/useAppStore';
@@ -49,13 +49,97 @@ const storeMarkerIcon = (isAbove) => {
 const predictionColor = (score, maxScore) => {
   if (maxScore <= 0) return '#94a3b8';
   const pct = score / maxScore;
-  if (pct >= 0.7) return '#22C55E';  // green  – high
-  if (pct >= 0.4) return '#F59E0B';  // amber  – mid
-  return '#EF4444';                   // red    – low
+  if (pct >= 0.7) return '#22C55E';
+  if (pct >= 0.4) return '#F59E0B';
+  return '#EF4444';
 };
 const scoreSize = (s) => 8 + (s / 100) * 14;
 
-// ─── Light-theme popup card ───────────────────────────────────
+// ─── Hex classification → colour ──────────────────────────────
+// Matches existing design tokens for visual consistency.
+const HEX_COLORS = {
+  above:     '#22C55E',  // success
+  on_target: '#F59E0B',  // warning / amber
+  below:     '#EF4444',  // danger
+};
+const HEX_LABELS = {
+  above:     'Above network avg',
+  on_target: 'On target',
+  below:     'Below network avg',
+};
+
+// ─── Hex tooltip card ─────────────────────────────────────────
+function HexInfoCard({ hex, networkAvg, currencySymbol, country }) {
+  const cur = (val) => {
+    if (val == null) return '—';
+    if (country === 'India') {
+      if (val >= 10000000) return `${currencySymbol}${(val / 10000000).toFixed(2)} Cr`;
+      if (val >= 100000)   return `${currencySymbol}${(val / 100000).toFixed(1)} L`;
+      return `${currencySymbol}${val.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+    }
+    if (val >= 1000000) return `${currencySymbol}${(val / 1000000).toFixed(2)} M`;
+    if (val >= 1000)    return `${currencySymbol}${(val / 1000).toFixed(1)} K`;
+    return `${currencySymbol}${val.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+  };
+
+  const color = HEX_COLORS[hex.classification];
+  const label = HEX_LABELS[hex.classification];
+
+  return (
+    <div style={{ fontFamily: 'Inter,system-ui,sans-serif', width: 240, padding: 0 }}>
+      <div style={{
+        background: `linear-gradient(135deg, ${color}, ${color}dd)`,
+        padding: '10px 14px',
+        borderRadius: '12px 12px 0 0',
+      }}>
+        <div style={{
+          fontSize: 9, color: 'rgba(255,255,255,0.85)', fontWeight: 700,
+          textTransform: 'uppercase', letterSpacing: '0.08em',
+        }}>
+          Performance Zone · {label}
+        </div>
+        <div style={{
+          fontSize: 22, fontWeight: 800, color: '#fff', marginTop: 4,
+          fontVariantNumeric: 'tabular-nums', lineHeight: 1.1,
+        }}>
+          {hex.pct_of_network_avg.toFixed(1)}%
+        </div>
+        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.8)', marginTop: 2 }}>
+          of network average
+        </div>
+      </div>
+      <div style={{ padding: '10px 14px', background: '#fff', borderRadius: '0 0 12px 12px', fontSize: 12 }}>
+        {[
+          ['Stores in zone',  hex.store_count],
+          ['Zone avg revenue', cur(hex.avg_revenue)],
+          ['Network avg',      cur(networkAvg)],
+          ['Total revenue',    cur(hex.total_revenue)],
+        ].map(([lbl, val]) => (
+          <div key={lbl} style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
+            padding: '4px 0', borderBottom: '1px solid #F3F4F6', fontSize: 11,
+          }}>
+            <span style={{ color: '#6B7280' }}>{lbl}</span>
+            <span style={{ fontWeight: 700, color: '#111827' }}>{val}</span>
+          </div>
+        ))}
+        {hex.store_names && hex.store_names.length > 0 && (
+          <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid #F3F4F6' }}>
+            <div style={{ fontSize: 9, fontWeight: 700, color: '#9CA3AF', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>
+              Stores
+            </div>
+            <div style={{ fontSize: 10, color: '#6B7280', lineHeight: 1.5 }}>
+              {hex.store_names.slice(0, 4).join(' · ')}
+              {hex.store_names.length > 4 && ` · +${hex.store_names.length - 4} more`}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Light-theme popup card (existing — unchanged) ────────────
 function InfoCard({ d, avgSales }) {
   const { currencySymbol, country } = useAppStore();
 
@@ -101,7 +185,6 @@ function InfoCard({ d, avgSales }) {
 
   return (
     <div style={{ fontFamily: 'Inter,system-ui,sans-serif', width: 280, padding: 0 }}>
-      {/* Header */}
       <div style={{ background: headerColor, padding: '10px 14px', borderRadius: '12px 12px 0 0' }}>
         <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.8)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', display:'flex', alignItems:'center', gap: 6, flexWrap:'wrap' }}>
           <span>{typeLabel}</span>
@@ -124,7 +207,6 @@ function InfoCard({ d, avgSales }) {
         )}
       </div>
 
-      {/* Body */}
       <div style={{ padding: '12px 14px', background: '#ffffff', borderRadius: '0 0 12px 12px' }}>
         {rows.map(([lbl, val]) => (
           <div key={lbl} style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', padding:'4px 0', borderBottom:'1px solid #F3F4F6', fontSize:12 }}>
@@ -175,7 +257,10 @@ const getAmenityEmoji = (type) => {
 
 // ─── Main Map ─────────────────────────────────────────────────
 export default function MapContainer_() {
-  const { results, stateConfig, mapLayers, storeFilter, selectedRegion, currencySymbol } = useAppStore();
+  const {
+    results, stateConfig, mapLayers, storeFilter, selectedRegion,
+    currencySymbol, country, hexHeatmap,
+  } = useAppStore();
   const center = stateConfig?.center || [20, 78];
   const zoom   = stateConfig?.zoom   || 6;
 
@@ -237,6 +322,45 @@ export default function MapContainer_() {
         attribution='&copy; <a href="https://carto.com/">CARTO</a>'
         maxZoom={19}
       />
+
+      {/* ── HEX HEATMAP (rendered FIRST so pins/markers draw on top) ───────
+          Each polygon is an H3 cell aggregating stores inside it, coloured
+          by performance vs network avg. */}
+      {mapLayers.hexHeatmap && hexHeatmap?.hexes?.length > 0 && hexHeatmap.hexes.map((hex) => {
+        const color = HEX_COLORS[hex.classification];
+        return (
+          <Polygon
+            key={`hex-${hex.cell}`}
+            positions={hex.boundary}
+            pathOptions={{
+              color,
+              fillColor: color,
+              fillOpacity: 0.32,
+              weight: 1.2,
+              opacity: 0.85,
+            }}
+          >
+            <Tooltip sticky direction="top" offset={[0, -8]}>
+              <div style={{ fontFamily: 'Inter', minWidth: 140 }}>
+                <div style={{ fontWeight: 800, fontSize: 12, color }}>
+                  {HEX_LABELS[hex.classification]} · {hex.pct_of_network_avg.toFixed(0)}%
+                </div>
+                <div style={{ fontSize: 10, color: '#6B7280', marginTop: 2 }}>
+                  {hex.store_count} store{hex.store_count !== 1 ? 's' : ''} in this zone
+                </div>
+              </div>
+            </Tooltip>
+            <Popup maxWidth={260}>
+              <HexInfoCard
+                hex={hex}
+                networkAvg={hexHeatmap.network_avg}
+                currencySymbol={currencySymbol}
+                country={country}
+              />
+            </Popup>
+          </Polygon>
+        );
+      })}
 
       {/* ── Amenities (clustered) ──────────────── */}
       {(mapLayers.amenities ?? true) && amenities.length > 0 && (
@@ -332,11 +456,9 @@ export default function MapContainer_() {
       {mapLayers.realEstate && real_estate.length > 0 && real_estate.map((d, i) => {
         const costIndex = d.property_cost_index || 50;
         const growthScore = d.property_growth_score || 50;
-        // Radius based on cost (larger = more expensive)
         const radius = 5 + (costIndex / 100) * 15;
-        // Color based on growth (green = high growth, red = low growth)
         const color = growthScore > 60 ? '#22C55E' : growthScore < 40 ? '#EF4444' : '#F59E0B';
-        
+
         return (
           <CircleMarker key={`re-${i}`} center={[d.lat, d.lng]} radius={radius}
             pathOptions={{ color, fillColor: color, fillOpacity: 0.5, weight: 1, opacity: 0.8 }}

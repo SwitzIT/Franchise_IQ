@@ -10,9 +10,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import APP_TITLE, APP_VERSION
-from app.routes import api_router
 from app.services.session_store import purge_expired
 from app.utils import get_logger
+from app.routes import all_routers
 
 log = get_logger("main")
 
@@ -40,6 +40,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
+# ✅ CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -54,7 +56,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(api_router)
+
+# ✅ REGISTER ROUTES (FIXED)
+for router in all_routers:
+    app.include_router(router, prefix="/api")
 
 
 @app.get("/health")
@@ -65,4 +70,7 @@ def health():
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
     log.exception(f"Unhandled: {exc}")
-    return JSONResponse(status_code=500, content={"error": "Internal server error", "detail": str(exc)})
+    return JSONResponse(
+        status_code=500,
+        content={"error": "Internal server error", "detail": str(exc)}
+    )

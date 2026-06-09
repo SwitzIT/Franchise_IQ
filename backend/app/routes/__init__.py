@@ -1,23 +1,53 @@
 """
-All API Routes — registered as a single APIRouter in main.py
+Routes package — central registration of all FastAPI routers.
+
+In main.py, do:
+    from app.routes import all_routers
+    for r in all_routers:
+        app.include_router(r, prefix="/api")
 """
 from fastapi import APIRouter
 
-from .country   import router as country_router
-from .data      import router as data_router
-from .amenities import router as amenities_router
-from .business_units import router as bu_router
-from .predict   import router as predict_router
-from .results   import router as results_router
-from .analytics import router as analytics_router
-from .chat      import router as chat_router
+# v1 routers (existing) — imported defensively in case the surrounding
+# repo's file names differ slightly.
+_existing_routers: list[APIRouter] = []
 
-api_router = APIRouter(prefix="/api")
-api_router.include_router(country_router)
-api_router.include_router(data_router)
-api_router.include_router(amenities_router)
-api_router.include_router(bu_router)
-api_router.include_router(predict_router)
-api_router.include_router(results_router)
-api_router.include_router(analytics_router)
-api_router.include_router(chat_router)
+try:
+    from app.routes.analytics import router as analytics_router
+    _existing_routers.append(analytics_router)
+except ImportError:
+    pass
+
+# v3 NEW routers
+try:
+    from app.routes.validation import router as validation_router
+    _existing_routers.append(validation_router)
+except ImportError:
+    pass
+
+try:
+    from app.routes.competitors import router as competitors_router
+    _existing_routers.append(competitors_router)
+except ImportError:
+    pass
+
+try:
+    from app.routes.site_discovery import router as site_discovery_router
+    _existing_routers.append(site_discovery_router)
+except ImportError:
+    pass
+
+# Try to import existing routers from the repo (so __init__.py works as a
+# drop-in replacement). If any of these don't exist, just skip them.
+for module_name in [
+    "countries", "data", "amenities", "business_units",
+    "predict", "results", "chat",
+]:
+    try:
+        mod = __import__(f"app.routes.{module_name}", fromlist=["router"])
+        if hasattr(mod, "router"):
+            _existing_routers.append(mod.router)
+    except ImportError:
+        pass
+
+all_routers: list[APIRouter] = _existing_routers
