@@ -3,6 +3,7 @@ import { MapContainer, TileLayer, CircleMarker, Marker, Polygon, Popup, Tooltip,
 import MarkerClusterGroup from 'react-leaflet-cluster';
 import L from 'leaflet';
 import useAppStore from '../store/useAppStore';
+import HexHeatmapLayer from './HexHeatmapLayer';
 
 // ─── FlyTo on store/prediction selection ──────────────────────
 function FlyToLocation() {
@@ -22,8 +23,8 @@ function FlyToLocation() {
 const emojiIcon = (emoji, size = 26) => L.divIcon({
   html: `<div style="font-size:${size}px;line-height:1;filter:drop-shadow(0 2px 6px rgba(0,0,0,0.25));">${emoji}</div>`,
   className: '',
-  iconSize:  [size, size],
-  iconAnchor:[size / 2, size / 2],
+  iconSize: [size, size],
+  iconAnchor: [size / 2, size / 2],
 });
 
 const storeMarkerIcon = (isAbove) => {
@@ -58,14 +59,14 @@ const scoreSize = (s) => 8 + (s / 100) * 14;
 // ─── Hex classification → colour ──────────────────────────────
 // Matches existing design tokens for visual consistency.
 const HEX_COLORS = {
-  above:     '#22C55E',  // success
+  above: '#22C55E',  // success
   on_target: '#F59E0B',  // warning / amber
-  below:     '#EF4444',  // danger
+  below: '#EF4444',  // danger
 };
 const HEX_LABELS = {
-  above:     'Above network avg',
+  above: 'Above network avg',
   on_target: 'On target',
-  below:     'Below network avg',
+  below: 'Below network avg',
 };
 
 // ─── Hex tooltip card ─────────────────────────────────────────
@@ -74,11 +75,11 @@ function HexInfoCard({ hex, networkAvg, currencySymbol, country }) {
     if (val == null) return '—';
     if (country === 'India') {
       if (val >= 10000000) return `${currencySymbol}${(val / 10000000).toFixed(2)} Cr`;
-      if (val >= 100000)   return `${currencySymbol}${(val / 100000).toFixed(1)} L`;
+      if (val >= 100000) return `${currencySymbol}${(val / 100000).toFixed(1)} L`;
       return `${currencySymbol}${val.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
     }
     if (val >= 1000000) return `${currencySymbol}${(val / 1000000).toFixed(2)} M`;
-    if (val >= 1000)    return `${currencySymbol}${(val / 1000).toFixed(1)} K`;
+    if (val >= 1000) return `${currencySymbol}${(val / 1000).toFixed(1)} K`;
     return `${currencySymbol}${val.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
   };
 
@@ -110,10 +111,10 @@ function HexInfoCard({ hex, networkAvg, currencySymbol, country }) {
       </div>
       <div style={{ padding: '10px 14px', background: '#fff', borderRadius: '0 0 12px 12px', fontSize: 12 }}>
         {[
-          ['Stores in zone',  hex.store_count],
+          ['Stores in zone', hex.store_count],
           ['Zone avg revenue', cur(hex.avg_revenue)],
-          ['Network avg',      cur(networkAvg)],
-          ['Total revenue',    cur(hex.total_revenue)],
+          ['Network avg', cur(networkAvg)],
+          ['Total revenue', cur(hex.total_revenue)],
         ].map(([lbl, val]) => (
           <div key={lbl} style={{
             display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
@@ -152,44 +153,44 @@ function InfoCard({ d, avgSales }) {
     if (val == null) return '—';
     if (country === 'India') {
       if (val >= 10000000) return `${currencySymbol}${(val / 10000000).toFixed(2)} Cr`;
-      if (val >= 100000)   return `${currencySymbol}${(val / 100000).toFixed(1)} L`;
+      if (val >= 100000) return `${currencySymbol}${(val / 100000).toFixed(1)} L`;
       return `${currencySymbol}${fmt(val)}`;
     }
     if (val >= 1000000) return `${currencySymbol}${(val / 1000000).toFixed(2)} M`;
-    if (val >= 1000)    return `${currencySymbol}${(val / 1000).toFixed(1)} K`;
+    if (val >= 1000) return `${currencySymbol}${(val / 1000).toFixed(1)} K`;
     return `${currencySymbol}${fmt(val)}`;
   };
 
   const typeLabel = d.type === 'prediction' ? 'Top Candidate'
-    : d.type === 'store'   ? 'Existing Store'
-    : d.type === 'request' ? 'Franchise Request'
-    : 'Business Unit';
+    : d.type === 'store' ? 'Existing Store'
+      : d.type === 'request' ? 'Franchise Request'
+        : 'Business Unit';
 
   const headerColor =
     d.type === 'prediction' ? 'linear-gradient(135deg,#6C4CF1,#8B5CF6)' :
-    d.type === 'store' && avgSales > 0
-      ? (d.revenue >= avgSales
+      d.type === 'store' && avgSales > 0
+        ? (d.revenue >= avgSales
           ? 'linear-gradient(135deg,#16a34a,#22C55E)'
           : 'linear-gradient(135deg,#dc2626,#EF4444)')
-      : 'linear-gradient(135deg,#6C4CF1,#06b6d4)';
+        : 'linear-gradient(135deg,#6C4CF1,#06b6d4)';
 
-    const rows = [
-      [d.type === 'store' ? 'Total Revenue' : 'Est. Revenue', cur(d.revenue)],
-      ['Population', d.population != null ? fmt(d.population) : null],
-      ['Avg Income', d.income > 0 ? cur(d.income) : null],
-      ['Property Price', d.avg_property_price_3km > 0 ? cur(d.avg_property_price_3km) : (d.avg_property_price_5km > 0 ? cur(d.avg_property_price_5km) : 'N/A')],
-      ['Nearest Store', d.nearest_store ? `${d.nearest_store} (${d.nearest_store_km?.toFixed(1)} km)` : null],
-      ['Business Unit', d.bu_name || null],
-      ['BU Distance', (['store','prediction','request'].includes(d.type) && d.bu_name) ? `${d.bu_dist_km?.toFixed(1)} km` : null],
-    ].filter(([, v]) => v != null);
+  const rows = [
+    [d.type === 'store' ? 'Total Revenue' : 'Est. Revenue', cur(d.revenue)],
+    ['Population', d.population != null ? fmt(d.population) : null],
+    ['Avg Income', d.income > 0 ? cur(d.income) : null],
+    ['Property Price', d.avg_property_price_3km > 0 ? cur(d.avg_property_price_3km) : (d.avg_property_price_5km > 0 ? cur(d.avg_property_price_5km) : 'N/A')],
+    ['Nearest Store', d.nearest_store ? `${d.nearest_store} (${d.nearest_store_km?.toFixed(1)} km)` : null],
+    ['Business Unit', d.bu_name || null],
+    ['BU Distance', (['store', 'prediction', 'request'].includes(d.type) && d.bu_name) ? `${d.bu_dist_km?.toFixed(1)} km` : null],
+  ].filter(([, v]) => v != null);
 
   return (
     <div style={{ fontFamily: 'Inter,system-ui,sans-serif', width: 280, padding: 0 }}>
       <div style={{ background: headerColor, padding: '10px 14px', borderRadius: '12px 12px 0 0' }}>
-        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.8)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', display:'flex', alignItems:'center', gap: 6, flexWrap:'wrap' }}>
+        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.8)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
           <span>{typeLabel}</span>
           {d.region && d.region !== 'Unassigned' && (
-            <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 4, background: 'rgba(255,255,255,0.2)', border:'1px solid rgba(255,255,255,0.3)' }}>
+            <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 4, background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.3)' }}>
               📍 {d.region}
             </span>
           )}
@@ -209,32 +210,32 @@ function InfoCard({ d, avgSales }) {
 
       <div style={{ padding: '12px 14px', background: '#ffffff', borderRadius: '0 0 12px 12px' }}>
         {rows.map(([lbl, val]) => (
-          <div key={lbl} style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', padding:'4px 0', borderBottom:'1px solid #F3F4F6', fontSize:12 }}>
+          <div key={lbl} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '4px 0', borderBottom: '1px solid #F3F4F6', fontSize: 12 }}>
             <span style={{ color: '#6B7280' }}>{lbl}</span>
-            <span style={{ fontWeight: 700, color: '#111827', fontSize: 11, textAlign:'right', maxWidth: 150 }}>{val}</span>
+            <span style={{ fontWeight: 700, color: '#111827', fontSize: 11, textAlign: 'right', maxWidth: 150 }}>{val}</span>
           </div>
         ))}
 
         {d.total_amenities != null && (
           <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid #F3F4F6' }}>
-            <div style={{ fontSize: 9, fontWeight: 700, color: '#9CA3AF', letterSpacing:'0.08em', textTransform:'uppercase', marginBottom: 8 }}>Key Amenities (10km)</div>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'4px 16px' }}>
+            <div style={{ fontSize: 9, fontWeight: 700, color: '#9CA3AF', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8 }}>Key Amenities (10km)</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 16px' }}>
               {[['🍽️ Food', d.cnt_food], ['🛒 Retail', d.cnt_retail], ['🏫 Education', d.cnt_education], ['🏥 Health', d.cnt_health]]
                 .map(([lbl, cnt]) => (
-                  <div key={lbl} style={{ display:'flex', justifyContent:'space-between', fontSize:10, color:'#6B7280', padding:'2px 0' }}>
+                  <div key={lbl} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#6B7280', padding: '2px 0' }}>
                     <span>{lbl}</span>
-                    <span style={{ fontWeight:700, color:'#111827' }}>{cnt ?? 0}</span>
+                    <span style={{ fontWeight: 700, color: '#111827' }}>{cnt ?? 0}</span>
                   </div>
                 ))}
             </div>
           </div>
         )}
 
-        <div style={{ marginTop: 12, textAlign:'center' }}>
+        <div style={{ marginTop: 12, textAlign: 'center' }}>
           <a
             href={`https://www.google.com/maps/search/?api=1&query=${d.lat},${d.lng}`}
             target="_blank" rel="noopener noreferrer"
-            style={{ color: '#6C4CF1', fontSize: 12, textDecoration:'none', fontWeight:600 }}
+            style={{ color: '#6C4CF1', fontSize: 12, textDecoration: 'none', fontWeight: 600 }}
           >
             🗺️ Open in Google Maps
           </a>
@@ -245,13 +246,13 @@ function InfoCard({ d, avgSales }) {
 }
 
 const getAmenityEmoji = (type) => {
-  if (['restaurant','fast_food'].includes(type)) return '🍽️';
+  if (['restaurant', 'fast_food'].includes(type)) return '🍽️';
   if (type === 'cafe') return '☕';
   if (type === 'supermarket') return '🛒';
-  if (['mall','department_store'].includes(type)) return '🏬';
+  if (['mall', 'department_store'].includes(type)) return '🏬';
   if (type === 'school') return '🏫';
-  if (['college','university'].includes(type)) return '🎓';
-  if (['hospital','clinic','pharmacy'].includes(type)) return '🏥';
+  if (['college', 'university'].includes(type)) return '🎓';
+  if (['hospital', 'clinic', 'pharmacy'].includes(type)) return '🏥';
   return '📍';
 };
 
@@ -262,27 +263,27 @@ export default function MapContainer_() {
     currencySymbol, country, hexHeatmap,
   } = useAppStore();
   const center = stateConfig?.center || [20, 78];
-  const zoom   = stateConfig?.zoom   || 6;
+  const zoom = stateConfig?.zoom || 6;
 
   const { stores, requests, predictions, business_units, amenities, real_estate, avgSales, maxPredScore } = useMemo(() => {
     const allStores = results?.stores || [];
-    const allPreds  = results?.top_picks || [];
+    const allPreds = results?.top_picks || [];
 
     const totalSales = allStores.reduce((sum, s) => sum + (s.revenue || 0), 0);
     const avg = allStores.length > 0 ? totalSales / allStores.length : 0;
     const maxS = allPreds.reduce((mx, p) => Math.max(mx, p.score || 0), 0);
 
-    let filteredStores   = allStores;
+    let filteredStores = allStores;
     let filteredRequests = results?.requests || [];
-    let filteredPreds    = allPreds;
+    let filteredPreds = allPreds;
 
     if (storeFilter === 'above') filteredStores = filteredStores.filter(s => s.revenue >= avg);
     if (storeFilter === 'below') filteredStores = filteredStores.filter(s => s.revenue < avg);
 
     if (selectedRegion) {
-      filteredStores   = filteredStores.filter(s => s.region === selectedRegion);
+      filteredStores = filteredStores.filter(s => s.region === selectedRegion);
       filteredRequests = filteredRequests.filter(r => r.region === selectedRegion);
-      filteredPreds    = filteredPreds.filter(p => p.region === selectedRegion);
+      filteredPreds = filteredPreds.filter(p => p.region === selectedRegion);
     }
 
     return {
@@ -368,7 +369,7 @@ export default function MapContainer_() {
           {amenities.map((d, i) => (
             <Marker key={`am-${i}`} position={[d.lat, d.lng]} icon={emojiIcon(getAmenityEmoji(d.type), 18)}>
               <Tooltip sticky direction="top">
-                <span style={{ fontFamily:'Inter', fontSize:11, fontWeight:600, color:'#111827' }}>
+                <span style={{ fontFamily: 'Inter', fontSize: 11, fontWeight: 600, color: '#111827' }}>
                   {d.name || d.type.replace('_', ' ')}
                 </span>
               </Tooltip>
@@ -380,7 +381,7 @@ export default function MapContainer_() {
       {/* ── Existing Stores ────────────────────── */}
       {mapLayers.stores && stores.length > 0 && stores.map((d, i) => {
         const isAbove = d.revenue >= avgSales;
-        const color   = isAbove ? '#22C55E' : '#EF4444';
+        const color = isAbove ? '#22C55E' : '#EF4444';
         return (
           <React.Fragment key={`store-${i}`}>
             <CircleMarker center={[d.lat, d.lng]} radius={18}
@@ -392,9 +393,9 @@ export default function MapContainer_() {
             <Marker position={[d.lat, d.lng]} icon={storeMarkerIcon(isAbove)}>
               <Popup maxWidth={300}><InfoCard d={d} avgSales={avgSales} /></Popup>
               <Tooltip sticky direction="top">
-                <div style={{ fontFamily:'Inter' }}>
-                  <div style={{ fontWeight:700, fontSize:12, color }}>{isAbove ? '▲' : '▼'} {d.name}</div>
-                  <div style={{ fontSize:10, color:'#6B7280', marginTop:2 }}>{isAbove ? 'Above Average' : 'Below Average'}</div>
+                <div style={{ fontFamily: 'Inter' }}>
+                  <div style={{ fontWeight: 700, fontSize: 12, color }}>{isAbove ? '▲' : '▼'} {d.name}</div>
+                  <div style={{ fontSize: 10, color: '#6B7280', marginTop: 2 }}>{isAbove ? 'Above Average' : 'Below Average'}</div>
                 </div>
               </Tooltip>
             </Marker>
@@ -409,7 +410,7 @@ export default function MapContainer_() {
             <Marker key={`req-${i}`} position={[d.lat, d.lng]} icon={emojiIcon('📩', 22)}>
               <Popup maxWidth={300}><InfoCard d={d} avgSales={avgSales} /></Popup>
               <Tooltip sticky direction="top">
-                <span style={{ fontFamily:'Inter', fontSize:11, color:'#111827' }}>Request: {d.name}</span>
+                <span style={{ fontFamily: 'Inter', fontSize: 11, color: '#111827' }}>Request: {d.name}</span>
               </Tooltip>
             </Marker>
           ))}
@@ -430,11 +431,11 @@ export default function MapContainer_() {
             >
               <Popup maxWidth={300}><InfoCard d={d} avgSales={avgSales} /></Popup>
               <Tooltip sticky direction="top">
-                <div style={{ fontFamily:'Inter', minWidth:120 }}>
-                  <div style={{ fontWeight:800, fontSize:13, color: pColor }}>
+                <div style={{ fontFamily: 'Inter', minWidth: 120 }}>
+                  <div style={{ fontWeight: 800, fontSize: 13, color: pColor }}>
                     #{i + 1} {i === 0 ? '🏆' : '⭐'} {d.score?.toFixed(1)}/100
                   </div>
-                  <div style={{ fontSize:11, color:'#6B7280', marginTop:2 }}>{d.name}</div>
+                  <div style={{ fontSize: 11, color: '#6B7280', marginTop: 2 }}>{d.name}</div>
                 </div>
               </Tooltip>
             </CircleMarker>
@@ -447,7 +448,7 @@ export default function MapContainer_() {
         <Marker key={`bu-${i}`} position={[d.lat, d.lng]} icon={emojiIcon('🏭', 28)}>
           <Popup maxWidth={260}><InfoCard d={d} avgSales={avgSales} /></Popup>
           <Tooltip sticky direction="top">
-            <span style={{ fontFamily:'Inter', fontSize:12, fontWeight:600, color:'#111827' }}>BU: {d.name}</span>
+            <span style={{ fontFamily: 'Inter', fontSize: 12, fontWeight: 600, color: '#111827' }}>BU: {d.name}</span>
           </Tooltip>
         </Marker>
       ))}
@@ -464,13 +465,13 @@ export default function MapContainer_() {
             pathOptions={{ color, fillColor: color, fillOpacity: 0.5, weight: 1, opacity: 0.8 }}
           >
             <Tooltip sticky direction="top">
-              <div style={{ fontFamily:'Inter', minWidth:120 }}>
-                <div style={{ fontWeight:800, fontSize:13, color }}>Real Estate Data</div>
-                <div style={{ fontSize:11, color:'#6B7280', marginTop:2 }}>
+              <div style={{ fontFamily: 'Inter', minWidth: 120 }}>
+                <div style={{ fontWeight: 800, fontSize: 13, color }}>Real Estate Data</div>
+                <div style={{ fontSize: 11, color: '#6B7280', marginTop: 2 }}>
                   {d.price ? `Price: ${currencySymbol || ''}${Math.round(d.price).toLocaleString()}` : d.rent ? `Rent: ${currencySymbol || ''}${Math.round(d.rent).toLocaleString()}` : 'Price/Rent: N/A'}
                 </div>
-                <div style={{ fontSize:11, color:'#6B7280' }}>Cost Index: {costIndex.toFixed(1)}</div>
-                <div style={{ fontSize:11, color:'#6B7280' }}>Growth Score: {growthScore.toFixed(1)}</div>
+                <div style={{ fontSize: 11, color: '#6B7280' }}>Cost Index: {costIndex.toFixed(1)}</div>
+                <div style={{ fontSize: 11, color: '#6B7280' }}>Growth Score: {growthScore.toFixed(1)}</div>
               </div>
             </Tooltip>
           </CircleMarker>
