@@ -27,22 +27,30 @@ const emojiIcon = (emoji, size = 26) => L.divIcon({
   iconAnchor: [size / 2, size / 2],
 });
 
-const storeMarkerIcon = (isAbove) => {
-  const color = isAbove ? '#22C55E' : '#EF4444';
+const storeMarkerIcon = (classification) => {
+  const colors = { above: '#22C55E', on_target: '#F59E0B', below: '#EF4444' };
+  const color = colors[classification] || colors.on_target;
+  // Lucide-style "Store" SVG path, rendered in white inside a colored circle
   return L.divIcon({
-    html: `
-      <div style="display:flex;flex-direction:column;align-items:center;">
-        <div style="
-          background:${color};width:30px;height:30px;border-radius:8px;
-          border:2px solid white;display:flex;align-items:center;justify-content:center;
-          box-shadow:0 3px 10px rgba(0,0,0,0.2);font-size:16px;
-        ">🏪</div>
-        <div style="width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid ${color};margin-top:-1px;"></div>
-      </div>`,
-    className: '',
-    iconSize: [30, 38],
-    iconAnchor: [15, 38],
-    popupAnchor: [0, -36],
+    html: `<div style="
+      width:20px;height:20px;border-radius:50%;
+      background:${color};border:2px solid white;
+      display:flex;align-items:center;justify-content:center;
+      box-shadow:0 2px 5px rgba(0,0,0,0.35);
+    ">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none"
+           stroke="white" stroke-width="2.5"
+           stroke-linecap="round" stroke-linejoin="round">
+        <path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/>
+        <line x1="2" x2="22" y1="11" y2="11"/>
+        <path d="M5 11v10h14V11"/>
+        <path d="M10 21v-6h4v6"/>
+      </svg>
+    </div>`,
+    className: 'fiq-store-marker',
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+    popupAnchor: [0, -14],
   });
 };
 
@@ -256,6 +264,36 @@ const getAmenityEmoji = (type) => {
   return '📍';
 };
 
+// v3.5.4: Amenity category styles (colored border + emoji)
+const getAmenityStyle = (type) => {
+  if (['hospital', 'clinic', 'pharmacy'].includes(type))
+    return { color: '#DC2626', emoji: '🏥', label: 'Healthcare' };
+  if (['school', 'college', 'university'].includes(type))
+    return { color: '#2563EB', emoji: type === 'school' ? '🏫' : '🎓', label: 'Education' };
+  if (['restaurant', 'fast_food', 'cafe'].includes(type))
+    return { color: '#EA580C', emoji: type === 'cafe' ? '☕' : '🍽️', label: 'Food' };
+  if (['supermarket', 'mall', 'department_store'].includes(type))
+    return { color: '#7C3AED', emoji: type === 'supermarket' ? '🛒' : '🏬', label: 'Retail' };
+  return { color: '#6B7280', emoji: '📍', label: 'Other' };
+};
+
+const amenityIcon = (type) => {
+  const { color, emoji } = getAmenityStyle(type);
+  return L.divIcon({
+    html: `<div style="
+      width:18px;height:18px;border-radius:50%;
+      background:white;border:1.5px solid ${color};
+      display:flex;align-items:center;justify-content:center;
+      font-size:10px;line-height:1;
+      box-shadow:0 1px 3px rgba(0,0,0,0.25);
+    ">${emoji}</div>`,
+    className: 'fiq-amenity-icon',
+    iconSize: [20, 20],
+    iconAnchor: [10, 10],
+    popupAnchor: [0, -10],
+  });
+};
+
 // ─── Main Map ─────────────────────────────────────────────────
 export default function MapContainer_() {
   const {
@@ -367,7 +405,7 @@ export default function MapContainer_() {
       {(mapLayers.amenities ?? true) && amenities.length > 0 && (
         <MarkerClusterGroup chunkedLoading maxClusterRadius={50}>
           {amenities.map((d, i) => (
-            <Marker key={`am-${i}`} position={[d.lat, d.lng]} icon={emojiIcon(getAmenityEmoji(d.type), 18)}>
+            <Marker key={`am-${i}`} position={[d.lat, d.lng]} icon={amenityIcon(d.type)}>
               <Tooltip sticky direction="top">
                 <span style={{ fontFamily: 'Inter', fontSize: 11, fontWeight: 600, color: '#111827' }}>
                   {d.name || d.type.replace('_', ' ')}
@@ -378,28 +416,28 @@ export default function MapContainer_() {
         </MarkerClusterGroup>
       )}
 
-      {/* ── Existing Stores ────────────────────── */}
+      {/* ── Existing Stores (slim dots, 3-state) ────────────────────── */}
       {mapLayers.stores && stores.length > 0 && stores.map((d, i) => {
-        const isAbove = d.revenue >= avgSales;
-        const color = isAbove ? '#22C55E' : '#EF4444';
+        const ratio = avgSales > 0 ? d.revenue / avgSales : 1;
+        const classification =
+          ratio >= 1.10 ? 'above' :
+          ratio <= 0.90 ? 'below' : 'on_target';
+        const color =
+          classification === 'above' ? '#22C55E' :
+          classification === 'below' ? '#EF4444' : '#F59E0B';
+        const label =
+          classification === 'above' ? 'Above network avg' :
+          classification === 'below' ? 'Below network avg' : 'On target';
         return (
-          <React.Fragment key={`store-${i}`}>
-            <CircleMarker center={[d.lat, d.lng]} radius={18}
-              pathOptions={{ color, fillColor: color, fillOpacity: 0.08, weight: 1.5, opacity: 0.3 }}
-            />
-            <CircleMarker center={[d.lat, d.lng]} radius={11}
-              pathOptions={{ color, fillColor: color, fillOpacity: 0.2, weight: 2, opacity: 0.6 }}
-            />
-            <Marker position={[d.lat, d.lng]} icon={storeMarkerIcon(isAbove)}>
-              <Popup maxWidth={300}><InfoCard d={d} avgSales={avgSales} /></Popup>
-              <Tooltip sticky direction="top">
-                <div style={{ fontFamily: 'Inter' }}>
-                  <div style={{ fontWeight: 700, fontSize: 12, color }}>{isAbove ? '▲' : '▼'} {d.name}</div>
-                  <div style={{ fontSize: 10, color: '#6B7280', marginTop: 2 }}>{isAbove ? 'Above Average' : 'Below Average'}</div>
-                </div>
-              </Tooltip>
-            </Marker>
-          </React.Fragment>
+          <Marker key={`store-${i}`} position={[d.lat, d.lng]} icon={storeMarkerIcon(classification)}>
+            <Popup maxWidth={300}><InfoCard d={d} avgSales={avgSales} /></Popup>
+            <Tooltip sticky direction="top">
+              <div style={{ fontFamily: 'Inter' }}>
+                <div style={{ fontWeight: 700, fontSize: 12, color }}>{d.name}</div>
+                <div style={{ fontSize: 10, color: '#6B7280', marginTop: 2 }}>{label}</div>
+              </div>
+            </Tooltip>
+          </Marker>
         );
       })}
 

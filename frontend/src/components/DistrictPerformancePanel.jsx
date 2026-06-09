@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, MapPin, ChevronDown, ChevronUp,
@@ -125,7 +125,7 @@ export default function DistrictPerformancePanel() {
               District View
             </div>
             <div className="text-base font-bold text-ink truncate">
-              {data ? `${data.total_districts} districts Â· ${data.total_stores} stores` : 'Performance by district'}
+              {data ? `${data.total_districts} districts · ${data.total_stores} stores` : 'Performance by district'}
             </div>
           </div>
           <button
@@ -224,7 +224,7 @@ export default function DistrictPerformancePanel() {
                           <div className="font-semibold text-ink text-sm truncate">{d.district}</div>
                           <div className="text-[11px] text-ink-muted flex items-center gap-1.5">
                             <span>{d.store_count} stores</span>
-                            <span className="text-ink-subtle/50">Â·</span>
+                            <span className="text-ink-subtle/50">·</span>
                             <span className="font-mono tabular-nums">{formatCurrency(d.avg_revenue, currency)} avg</span>
                           </div>
                         </div>
@@ -246,7 +246,7 @@ export default function DistrictPerformancePanel() {
                           <div className="text-[10px] font-bold text-ink-subtle uppercase tracking-wider px-1 py-1
                                           flex items-center justify-between">
                             <span>Stores in {d.district}</span>
-                            <span className="font-mono text-[9px] text-ink-subtle">vs Net Â· vs Dist</span>
+                            <span className="font-mono text-[9px] text-ink-subtle">vs Net · vs Dist</span>
                           </div>
                           {d.stores.slice(0, 40).map((s, idx) => {
                             const isFilteredStore = mapStoreFilter?.kind === 'store' && mapStoreFilter.label === s.name;
@@ -320,7 +320,7 @@ export default function DistrictPerformancePanel() {
                   </span>
                   <span className="flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-amber-500" />
-                    Â±{(data.thresholds.above_pct - 100).toFixed(0)}%
+                    ±{(data.thresholds.above_pct - 100).toFixed(0)}%
                   </span>
                   <span className="flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-red-500" />
