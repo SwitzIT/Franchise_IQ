@@ -13,6 +13,7 @@ import KPICard from '../components/KPICard';
 import OpportunityPanel from '../components/OpportunityPanel';
 import ChatPanel from '../components/ChatPanel';
 import { getHexHeatmap } from '../services/api';
+// import DistrictPerformancePanel from '../components/DistrictPerformancePanel'; // ... <DistrictPerformancePanel />
 
 const LazyMap = React.lazy(() => import('../components/MapContainer'));
 
@@ -26,7 +27,7 @@ function FilterDropdown({ icon: Icon, label, items, selectedName, onSelect, plac
   useEffect(() => {
     const handler = (e) => {
       if (btnRef.current && !btnRef.current.contains(e.target) &&
-          panelRef.current && !panelRef.current.contains(e.target)) {
+        panelRef.current && !panelRef.current.contains(e.target)) {
         setOpen(false);
       }
     };
@@ -239,9 +240,9 @@ function MapLegend() {
 
 // ─── Store Performance Filter Bar ─────────────────────────────
 const STORE_FILTERS = [
-  { key: 'all',   label: 'All Stores',  icon: null },
-  { key: 'above', label: 'Above Avg',   icon: TrendingUp },
-  { key: 'below', label: 'Below Avg',   icon: TrendingDown },
+  { key: 'all', label: 'All Stores', icon: null },
+  { key: 'above', label: 'Above Avg', icon: TrendingUp },
+  { key: 'below', label: 'Below Avg', icon: TrendingDown },
 ];
 
 // ─── Mobile Bottom Sheet for Opportunity Panel ────────────────
@@ -289,8 +290,8 @@ export default function DashboardPage() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [selectedPrediction, setSelectedPrediction] = useState(null);
 
-  const storeItems  = stores.map(s => ({ name: s.name }));
-  const predItems   = predictions.map((p, i) => ({ name: p.name, score: p.score, rank: i + 1 }));
+  const storeItems = stores.map(s => ({ name: s.name }));
+  const predItems = predictions.map((p, i) => ({ name: p.name, score: p.score, rank: i + 1 }));
   const regionItems = regionKpis?.regions?.map(r => ({ name: r.name, score: r.avg_final_score })) || [];
 
   const flyToPrediction = (name) => {
@@ -326,11 +327,11 @@ export default function DashboardPage() {
     if (val == null) return '—';
     if (country === 'India') {
       if (val >= 10000000) return `${currencySymbol}${(val / 10000000).toFixed(2)} Cr`;
-      if (val >= 100000)   return `${currencySymbol}${(val / 100000).toFixed(1)} L`;
+      if (val >= 100000) return `${currencySymbol}${(val / 100000).toFixed(1)} L`;
       return `${currencySymbol}${val.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
     }
     if (val >= 1000000) return `${currencySymbol}${(val / 1000000).toFixed(2)} M`;
-    if (val >= 1000)    return `${currencySymbol}${(val / 1000).toFixed(1)} K`;
+    if (val >= 1000) return `${currencySymbol}${(val / 1000).toFixed(1)} K`;
     return `${currencySymbol}${val.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
   };
 
