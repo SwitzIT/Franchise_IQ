@@ -126,7 +126,7 @@ export default function AppSidebar({ activeNav, setActiveNav }) {
                 }`}
             >
 
-              Hex (spatial)
+              Expansion
             </button>
             <button
 

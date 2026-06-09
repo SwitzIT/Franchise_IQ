@@ -25,6 +25,12 @@ const useAppStore = create((set, get) => ({
   viewMode: 'hex',
   setViewMode: (m) => set({ viewMode: m }),
 
+  // -- v3.5: Map store filter (district / single store) --
+  mapStoreFilter: null,
+  setMapStoreFilter: (f) => set({ mapStoreFilter: f }),
+  clearMapStoreFilter: () => set({ mapStoreFilter: null }),
+  setFlyToCoords: (coords) => set({ flyToCoords: coords }),
+
   // ── Session ──────────────────────────────────────────────────
   sessionId: null,
   setSessionId: (id) => set({ sessionId: id }),

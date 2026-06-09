@@ -260,7 +260,7 @@ const getAmenityEmoji = (type) => {
 export default function MapContainer_() {
   const {
     results, stateConfig, mapLayers, storeFilter, selectedRegion,
-    currencySymbol, country, hexHeatmap,
+    currencySymbol, country, hexHeatmap, mapStoreFilter,
   } = useAppStore();
   const center = stateConfig?.center || [20, 78];
   const zoom = stateConfig?.zoom || 6;
@@ -296,7 +296,7 @@ export default function MapContainer_() {
       avgSales: avg,
       maxPredScore: maxS,
     };
-  }, [results, storeFilter, selectedRegion]);
+  }, [results, storeFilter, selectedRegion, mapStoreFilter]);
 
   if (!results) return (
     <div className="w-full h-full flex flex-col items-center justify-center bg-surface-2 gap-3">

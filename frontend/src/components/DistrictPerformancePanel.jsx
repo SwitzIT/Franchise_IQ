@@ -1,29 +1,29 @@
-import React, { useEffect, useState } from 'react';
+﻿import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, MapPin, ChevronDown, ChevronUp,
   TrendingUp, TrendingDown, Minus, Store, Loader2,
+  Crosshair, Eye,
 } from 'lucide-react';
 import useAppStore from '../store/useAppStore';
 import { getDistrictPerformance } from '../services/api';
 
 /**
- * DistrictPerformancePanel
- * ────────────────────────
+ * DistrictPerformancePanel â€” v3.5
+ * â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
  * Executive-friendly view: stores grouped by admin district with
- * per-district performance vs network average. Click any district
- * to expand its store list.
+ * per-district performance AND per-store performance shown in BOTH lenses:
+ *   - vs Network avg (whole-Mio baseline)
+ *   - vs District avg (peer-level baseline)
  *
- * Drop-in usage:
- *     import DistrictPerformancePanel from './DistrictPerformancePanel';
- *     // anywhere in your dashboard root:
- *     <DistrictPerformancePanel />
- *
- * Visibility is controlled by `store.viewMode === 'district'`.
- * Toggle via the sidebar control (see snippet in CHANGES_v3.4.md).
+ * Interactions:
+ *   - Click district row â†’ expands store list AND filters map to that
+ *     district's stores + flies map to district centroid
+ *   - Click any store row â†’ filters map to that one store + flies to it
+ *   - Click "Clear filter" â†’ restores full map view
  */
 
-function formatCurrency(n, sym = '₹') {
+function formatCurrency(n, sym = 'â‚¹') {
   if (!Number.isFinite(n)) return `${sym}0`;
   if (Math.abs(n) >= 1e7) return `${sym}${(n / 1e7).toFixed(2)} Cr`;
   if (Math.abs(n) >= 1e5) return `${sym}${(n / 1e5).toFixed(2)} L`;
@@ -31,18 +31,15 @@ function formatCurrency(n, sym = '₹') {
 }
 
 function classificationStyles(c) {
-  if (c === 'above') return {
-    bg: 'bg-green-50', border: 'border-green-300', text: 'text-green-700',
-    accent: '#22C55E', icon: TrendingUp, label: 'Above',
-  };
-  if (c === 'below') return {
-    bg: 'bg-red-50', border: 'border-red-300', text: 'text-red-700',
-    accent: '#EF4444', icon: TrendingDown, label: 'Below',
-  };
-  return {
-    bg: 'bg-amber-50', border: 'border-amber-300', text: 'text-amber-700',
-    accent: '#F59E0B', icon: Minus, label: 'On target',
-  };
+  if (c === 'above') return { bg: 'bg-green-50', border: 'border-green-300', text: 'text-green-700', accent: '#22C55E', icon: TrendingUp };
+  if (c === 'below') return { bg: 'bg-red-50',   border: 'border-red-300',   text: 'text-red-700',   accent: '#EF4444', icon: TrendingDown };
+  return                  { bg: 'bg-amber-50', border: 'border-amber-300', text: 'text-amber-700', accent: '#F59E0B', icon: Minus };
+}
+
+function pctColor(pct, thresholds) {
+  if (pct >= thresholds.above_pct) return '#22C55E';
+  if (pct <= thresholds.below_pct) return '#EF4444';
+  return '#F59E0B';
 }
 
 
@@ -50,6 +47,8 @@ export default function DistrictPerformancePanel() {
   const {
     sessionId, results, viewMode, setViewMode,
     currencySymbol,
+    mapStoreFilter, setMapStoreFilter, clearMapStoreFilter,
+    setFlyToCoords,
   } = useAppStore();
 
   const [data, setData] = useState(null);
@@ -57,7 +56,6 @@ export default function DistrictPerformancePanel() {
   const [expandedDistricts, setExpandedDistricts] = useState(new Set());
   const [error, setError] = useState(null);
 
-  // Fetch whenever the panel opens (or results change)
   useEffect(() => {
     if (viewMode !== 'district' || !sessionId || !results) return;
     let cancelled = false;
@@ -74,14 +72,36 @@ export default function DistrictPerformancePanel() {
 
   if (viewMode !== 'district') return null;
 
-  const toggleExpand = (key) => {
+  // â”€â”€ Interactions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const handleDistrictClick = (d) => {
+    // Toggle expansion
     const next = new Set(expandedDistricts);
-    if (next.has(key)) next.delete(key);
-    else next.add(key);
+    if (next.has(d.district)) next.delete(d.district);
+    else next.add(d.district);
     setExpandedDistricts(next);
+
+    // Filter map + fly to district centroid
+    const storeNames = d.stores.map(s => s.name).filter(Boolean);
+    setMapStoreFilter({ kind: 'district', label: d.district, names: storeNames });
+
+    const lats = d.stores.map(s => s.lat).filter(v => v && v !== 0);
+    const lngs = d.stores.map(s => s.lng).filter(v => v && v !== 0);
+    if (lats.length > 0) {
+      const cLat = lats.reduce((a, b) => a + b, 0) / lats.length;
+      const cLng = lngs.reduce((a, b) => a + b, 0) / lngs.length;
+      setFlyToCoords({ lat: cLat, lng: cLng, zoom: 10 });
+    }
   };
 
-  const currency = currencySymbol || '₹';
+  const handleStoreClick = (s, districtName) => {
+    if (!s.name) return;
+    setMapStoreFilter({ kind: 'store', label: s.name, names: [s.name], parentDistrict: districtName });
+    if (s.lat && s.lng) {
+      setFlyToCoords({ lat: s.lat, lng: s.lng, zoom: 15 });
+    }
+  };
+
+  const currency = currencySymbol || 'â‚¹';
 
   return (
     <AnimatePresence>
@@ -90,7 +110,7 @@ export default function DistrictPerformancePanel() {
         animate={{ x: 0, opacity: 1 }}
         exit={{ x: 360, opacity: 0 }}
         transition={{ type: 'spring', damping: 25, stiffness: 220 }}
-        className="fixed top-20 right-5 z-[2000] w-[26rem] max-w-[95vw] max-h-[82vh]
+        className="fixed top-20 right-5 z-[2000] w-[28rem] max-w-[95vw] max-h-[82vh]
                    bg-white rounded-2xl shadow-card-lg border border-border
                    flex flex-col overflow-hidden"
       >
@@ -105,13 +125,11 @@ export default function DistrictPerformancePanel() {
               District View
             </div>
             <div className="text-base font-bold text-ink truncate">
-              {data
-                ? `${data.total_districts} districts · ${data.total_stores} stores`
-                : 'Performance by district'}
+              {data ? `${data.total_districts} districts Â· ${data.total_stores} stores` : 'Performance by district'}
             </div>
           </div>
           <button
-            onClick={() => setViewMode('hex')}
+            onClick={() => { setViewMode('hex'); clearMapStoreFilter(); }}
             className="p-1 rounded hover:bg-app-bg transition-colors"
             aria-label="Close"
           >
@@ -119,12 +137,32 @@ export default function DistrictPerformancePanel() {
           </button>
         </div>
 
+        {/* Active filter badge */}
+        {mapStoreFilter && (
+          <div className="px-3 py-2 bg-primary/10 border-b border-primary/20 flex items-center gap-2 shrink-0">
+            <Crosshair size={12} className="text-primary shrink-0" />
+            <div className="flex-1 text-xs text-ink truncate">
+              Map filtered to:{' '}
+              <span className="font-semibold">{mapStoreFilter.label}</span>
+              {mapStoreFilter.kind === 'district' && (
+                <span className="text-ink-muted ml-1">({mapStoreFilter.names.length} stores)</span>
+              )}
+            </div>
+            <button
+              onClick={clearMapStoreFilter}
+              className="text-[10px] text-primary font-bold hover:underline shrink-0"
+            >
+              CLEAR
+            </button>
+          </div>
+        )}
+
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-3">
           {loading && (
             <div className="flex items-center justify-center gap-2 py-8 text-ink-muted text-sm">
               <Loader2 size={14} className="animate-spin" />
-              Aggregating districts…
+              Aggregating districtsâ€¦
             </div>
           )}
 
@@ -149,59 +187,51 @@ export default function DistrictPerformancePanel() {
                 </div>
               </div>
 
+              {/* Lens explainer */}
+              <div className="rounded-lg border border-primary/20 bg-primary/5 p-2.5 mb-3 text-[10px] text-ink-muted leading-relaxed">
+                <span className="font-bold text-primary">Two lenses per store:</span>{' '}
+                <span className="font-semibold">vs Net</span> = vs whole-Mio avg.{' '}
+                <span className="font-semibold">vs Dist</span> = vs same-district peers.
+              </div>
+
               {/* District cards */}
               <div className="space-y-1.5">
                 {data.districts.map((d, i) => {
                   const styles = classificationStyles(d.classification);
                   const ClsIcon = styles.icon;
                   const isExpanded = expandedDistricts.has(d.district);
+                  const isFilteredHere = mapStoreFilter?.kind === 'district' && mapStoreFilter.label === d.district;
                   const rank = i + 1;
                   const deltaPct = d.pct_of_network_avg - 100;
-                  const deltaSign = deltaPct >= 0 ? '+' : '−';
+                  const deltaSign = deltaPct >= 0 ? '+' : 'âˆ’';
 
                   return (
                     <div
                       key={d.district}
-                      className={`rounded-lg border ${styles.border} overflow-hidden`}
+                      className={`rounded-lg border ${styles.border} overflow-hidden
+                                  ${isFilteredHere ? 'ring-2 ring-primary/40' : ''}`}
                     >
                       <button
-                        onClick={() => toggleExpand(d.district)}
+                        onClick={() => handleDistrictClick(d)}
                         className={`w-full ${styles.bg} px-3 py-2.5 flex items-center gap-3
                                     hover:brightness-95 transition-all text-left`}
                       >
-                        {/* Rank */}
                         <div className="text-[10px] font-mono text-ink-subtle w-6 shrink-0">
                           #{rank}
                         </div>
-
-                        {/* Classification dot */}
-                        <div
-                          className="w-2 h-2 rounded-full shrink-0"
-                          style={{ backgroundColor: styles.accent }}
-                        />
-
-                        {/* District info */}
+                        <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: styles.accent }} />
                         <div className="flex-1 min-w-0">
-                          <div className="font-semibold text-ink text-sm truncate">
-                            {d.district}
-                          </div>
+                          <div className="font-semibold text-ink text-sm truncate">{d.district}</div>
                           <div className="text-[11px] text-ink-muted flex items-center gap-1.5">
                             <span>{d.store_count} stores</span>
-                            <span className="text-ink-subtle/50">·</span>
-                            <span className="font-mono tabular-nums">
-                              {formatCurrency(d.avg_revenue, currency)} avg
-                            </span>
+                            <span className="text-ink-subtle/50">Â·</span>
+                            <span className="font-mono tabular-nums">{formatCurrency(d.avg_revenue, currency)} avg</span>
                           </div>
                         </div>
-
-                        {/* Delta + chevron */}
                         <div className="text-right shrink-0 flex items-center gap-2">
                           <div
                             className="text-xs font-bold font-mono tabular-nums px-2 py-0.5 rounded"
-                            style={{
-                              color: styles.accent,
-                              backgroundColor: styles.accent + '15',
-                            }}
+                            style={{ color: styles.accent, backgroundColor: styles.accent + '15' }}
                           >
                             {deltaSign}{Math.abs(deltaPct).toFixed(1)}%
                           </div>
@@ -211,63 +241,64 @@ export default function DistrictPerformancePanel() {
                         </div>
                       </button>
 
-                      {/* Expanded store list */}
                       {isExpanded && (
                         <div className="border-t border-border bg-white p-2 space-y-1">
-                          <div className="text-[10px] font-bold text-ink-subtle uppercase tracking-wider px-1 py-1">
-                            Stores in {d.district} (sorted by revenue)
+                          <div className="text-[10px] font-bold text-ink-subtle uppercase tracking-wider px-1 py-1
+                                          flex items-center justify-between">
+                            <span>Stores in {d.district}</span>
+                            <span className="font-mono text-[9px] text-ink-subtle">vs Net Â· vs Dist</span>
                           </div>
-                          {d.stores.slice(0, 30).map((s, idx) => (
-                            <div
-                              key={`${d.district}-${idx}`}
-                              className="flex items-center gap-2 px-2 py-1.5 rounded text-xs hover:bg-app-bg/50"
-                            >
-                              <Store size={11} className="text-ink-subtle shrink-0" />
-                              <div className="flex-1 min-w-0 truncate text-ink-muted">
-                                {s.name || '(unnamed)'}
-                              </div>
-                              <div className="font-mono tabular-nums text-ink-subtle">
-                                {formatCurrency(s.revenue, currency)}
-                              </div>
-                              <div
-                                className="font-mono text-[10px] tabular-nums w-12 text-right"
-                                style={{
-                                  color:
-                                    s.pct_of_network_avg >= data.thresholds.above_pct
-                                      ? '#22C55E'
-                                      : s.pct_of_network_avg <= data.thresholds.below_pct
-                                      ? '#EF4444'
-                                      : '#F59E0B',
-                                }}
+                          {d.stores.slice(0, 40).map((s, idx) => {
+                            const isFilteredStore = mapStoreFilter?.kind === 'store' && mapStoreFilter.label === s.name;
+                            return (
+                              <button
+                                key={`${d.district}-${idx}`}
+                                onClick={(e) => { e.stopPropagation(); handleStoreClick(s, d.district); }}
+                                className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs
+                                            hover:bg-primary/5 transition-colors text-left
+                                            ${isFilteredStore ? 'bg-primary/10 ring-1 ring-primary/30' : ''}`}
+                                title="Click to filter map to this store"
                               >
-                                {s.pct_of_network_avg.toFixed(0)}%
-                              </div>
-                            </div>
-                          ))}
-                          {d.stores.length > 30 && (
+                                <Store size={11} className="text-ink-subtle shrink-0" />
+                                <div className="flex-1 min-w-0 truncate text-ink">{s.name || '(unnamed)'}</div>
+                                <div className="font-mono tabular-nums text-ink-subtle text-[10px] w-20 text-right">
+                                  {formatCurrency(s.revenue, currency)}
+                                </div>
+                                <div
+                                  className="font-mono text-[10px] tabular-nums w-10 text-right font-semibold"
+                                  style={{ color: pctColor(s.pct_of_network_avg, data.thresholds) }}
+                                  title="vs Network avg"
+                                >
+                                  {s.pct_of_network_avg >= 100 ? "+" : "âˆ’"}{Math.abs(s.pct_of_network_avg - 100).toFixed(0)}%
+                                </div>
+                                <div
+                                  className="font-mono text-[10px] tabular-nums w-10 text-right"
+                                  style={{ color: pctColor(s.pct_of_district_avg, data.thresholds) }}
+                                  title="vs District avg"
+                                >
+                                  {s.pct_of_district_avg >= 100 ? "+" : "âˆ’"}{Math.abs(s.pct_of_district_avg - 100).toFixed(0)}%
+                                </div>
+                              </button>
+                            );
+                          })}
+                          {d.stores.length > 40 && (
                             <div className="text-[10px] text-ink-subtle italic text-center py-1">
-                              …and {d.stores.length - 30} more stores
+                              â€¦and {d.stores.length - 40} more stores
                             </div>
                           )}
                           {/* District stats footer */}
                           <div className="border-t border-border mt-1 pt-2 px-1 grid grid-cols-3 gap-2 text-[10px]">
                             <div>
                               <div className="text-ink-subtle">Min</div>
-                              <div className="font-mono font-semibold text-ink">
-                                {formatCurrency(d.min_revenue, currency)}
-                              </div>
+                              <div className="font-mono font-semibold text-ink">{formatCurrency(d.min_revenue, currency)}</div>
                             </div>
                             <div>
                               <div className="text-ink-subtle">Avg</div>
-                              <div className="font-mono font-semibold text-ink">
-                                {formatCurrency(d.avg_revenue, currency)}
-                              </div>
+                              <div className="font-mono font-semibold text-ink">{formatCurrency(d.avg_revenue, currency)}</div>
                             </div>
                             <div>
                               <div className="text-ink-subtle">Max</div>
-                              <div className="font-mono font-semibold text-ink">
-                                {formatCurrency(d.max_revenue, currency)}
-                              </div>
+                              <div className="font-mono font-semibold text-ink">{formatCurrency(d.max_revenue, currency)}</div>
                             </div>
                           </div>
                         </div>
@@ -285,15 +316,15 @@ export default function DistrictPerformancePanel() {
                 <div className="flex flex-wrap gap-3 text-[11px] text-ink-muted">
                   <span className="flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-green-500" />
-                    ≥ {data.thresholds.above_pct}% of net avg
+                    â‰¥ +{(data.thresholds.above_pct - 100).toFixed(0)}%
                   </span>
                   <span className="flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-amber-500" />
-                    {data.thresholds.below_pct}–{data.thresholds.above_pct}%
+                    Â±{(data.thresholds.above_pct - 100).toFixed(0)}%
                   </span>
                   <span className="flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-red-500" />
-                    ≤ {data.thresholds.below_pct}%
+                    â‰¤ âˆ’{(100 - data.thresholds.below_pct).toFixed(0)}%
                   </span>
                 </div>
               </div>
