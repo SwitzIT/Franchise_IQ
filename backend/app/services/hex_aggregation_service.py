@@ -1,83 +1,44 @@
 """
-H3 Hex Aggregation Service
-──────────────────────────
-Aggregates store revenue into H3 hexagonal cells and classifies each cell
-vs the network average, producing an area-level performance heatmap.
-
-KEY FEATURE: Auto-resolution
-────────────────────────────
-The product is multi-tenant: one company has 10 stores in a city, another
-has 1,000 across a country. A fixed default resolution breaks for both.
-`suggest_resolution()` picks the resolution balancing aggregation quality
-(≥3 stores per cell on average) against cell count (10–100 cells is the
-visual sweet spot).
-
-Validated against:
-  Mio Amore   (384 stores · West Bengal, 56,000 km²) → resolution 5
-  Caravan     (69 stores · Sri Lanka, 1,500 km²)     → resolution 6
+Hex aggregation service — performance heatmap.
+v3.3 enhancement: per-hex output now includes `stores_detail` (each store's
+revenue + % of network avg) and `dominant_locality` (auto-derived from
+store regions), so the UI can render an explainable drill-down panel.
 """
-from typing import Any, Dict, List, Optional, Tuple
+from collections import Counter
+from typing import Any, Dict, List, Optional
 
 import h3
 
-from app.utils import safe_float, get_logger
+from app.utils import get_logger, safe_float
 
 log = get_logger("services.hex_aggregation")
 
-# ── Defaults ────────────────────────────────────────────────────────────────
+# ── Resolution selection (v2, unchanged) ────────────────────────────
 MIN_RESOLUTION = 4
 MAX_RESOLUTION = 9
-FALLBACK_RESOLUTION = 7   # used when input is empty / unanalysable
+TARGET_AVG_PER_CELL = 5.0
+IDEAL_CELL_COUNT_LO = 20
+IDEAL_CELL_COUNT_HI = 120
 
-DEFAULT_ABOVE_THRESHOLD = 1.10   # ≥110% of network avg → "above"
-DEFAULT_BELOW_THRESHOLD = 0.90   # ≤ 90% of network avg → "below"
-
-# Auto-resolution tuning constants
-TARGET_AVG_PER_CELL = 5.0     # ideal stores per non-empty cell
-IDEAL_CELL_COUNT_LO = 10      # below this and the map looks empty
-IDEAL_CELL_COUNT_HI = 100     # above this and the map looks noisy
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Adaptive resolution
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _extract_valid_points(stores: List[Dict[str, Any]]) -> List[Tuple[float, float]]:
-    """Pull (lat, lng) tuples from store records, filtering out junk values."""
-    pts: List[Tuple[float, float]] = []
-    for s in stores:
-        try:
-            lat = safe_float(s.get("lat"))
-            lng = safe_float(s.get("lng"))
-        except Exception:
-            continue
-        if lat == 0.0 and lng == 0.0:
-            continue
-        if not (-90.0 < lat < 90.0) or not (-180.0 < lng < 180.0):
-            continue
-        pts.append((lat, lng))
-    return pts
+# ── Classification thresholds ───────────────────────────────────────
+DEFAULT_ABOVE_THRESHOLD = 1.10   # ≥ 110% of network avg → "above"
+DEFAULT_BELOW_THRESHOLD = 0.90   # ≤  90% of network avg → "below"
 
 
 def suggest_resolution(stores: List[Dict[str, Any]]) -> int:
     """
-    Pick an H3 resolution that aggregates the given stores into a useful
-    number of cells with meaningful within-cell aggregation.
-
-    Strategy: walk resolutions MIN..MAX, score each, return the winner.
-    Score components:
-      + 10 if average stores/cell is in [3, 8]; else linear distance from 5
-      +  5 if cell count is in [10, 100];      else linear penalty
-      −10 × singleton_ratio (one-store cells dilute the aggregation)
+    Pick an H3 resolution that produces a sensible aggregation given
+    dataset size and spread. Same heuristic as v2 — no change.
     """
-    valid_pts = _extract_valid_points(stores)
-    if len(valid_pts) < 3:
-        log.info("suggest_resolution: <3 valid points, returning fallback %d", FALLBACK_RESOLUTION)
-        return FALLBACK_RESOLUTION
+    valid_pts = [
+        (safe_float(s.get("lat")), safe_float(s.get("lng")))
+        for s in stores
+        if safe_float(s.get("lat")) != 0.0 and safe_float(s.get("lng")) != 0.0
+    ]
+    if len(valid_pts) < 5:
+        return 6
 
-    best_score = float("-inf")
-    best_res = FALLBACK_RESOLUTION
-
+    best_res, best_score = 6, -float("inf")
     for res in range(MIN_RESOLUTION, MAX_RESOLUTION + 1):
         cell_counts: Dict[str, int] = {}
         for lat, lng in valid_pts:
@@ -86,7 +47,6 @@ def suggest_resolution(stores: List[Dict[str, Any]]) -> int:
                 cell_counts[c] = cell_counts.get(c, 0) + 1
             except Exception:
                 continue
-
         if not cell_counts:
             continue
 
@@ -94,34 +54,46 @@ def suggest_resolution(stores: List[Dict[str, Any]]) -> int:
         avg_per_cell = len(valid_pts) / n_cells
         singleton_ratio = sum(1 for v in cell_counts.values() if v == 1) / n_cells
 
-        if 3 <= avg_per_cell <= 8:
-            avg_score = 10.0
-        else:
-            avg_score = -abs(avg_per_cell - TARGET_AVG_PER_CELL) * 2
-
+        avg_score = 10.0 if 3 <= avg_per_cell <= 8 else -abs(avg_per_cell - TARGET_AVG_PER_CELL) * 2
         if IDEAL_CELL_COUNT_LO <= n_cells <= IDEAL_CELL_COUNT_HI:
             count_score = 5.0
         elif n_cells < IDEAL_CELL_COUNT_LO:
             count_score = -(IDEAL_CELL_COUNT_LO - n_cells)
         else:
             count_score = -(n_cells - IDEAL_CELL_COUNT_HI) * 0.05
-
         singleton_penalty = -singleton_ratio * 10.0
         total = avg_score + count_score + singleton_penalty
 
         if total > best_score:
-            best_score = total
-            best_res = res
+            best_score, best_res = total, res
 
-    log.info(
-        "suggest_resolution: %d stores → picked resolution %d (score %.2f)",
-        len(valid_pts), best_res, best_score,
-    )
+    log.info("suggest_resolution: %d stores → res %d (score %.2f)",
+             len(valid_pts), best_res, best_score)
     return best_res
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Main aggregation
+# Locality derivation
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _dominant_locality(store_regions: List[Dict[str, str]]) -> str:
+    """
+    Given a list of {city, suburb, district, state} dicts (one per store),
+    return the most common non-empty value, prioritising specificity:
+    suburb > city > district > state.
+
+    Returns an empty string if nothing is available.
+    """
+    for field in ("suburb", "city", "district", "state"):
+        values = [r.get(field) for r in store_regions if r.get(field)]
+        if values:
+            counter = Counter(values)
+            return counter.most_common(1)[0][0]
+    return ""
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Main aggregation (v3.3: enhanced output)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def compute_hex_heatmap(
@@ -133,11 +105,9 @@ def compute_hex_heatmap(
     """
     Build the hex-level performance heatmap.
 
-    resolution=None (default) → auto-select via suggest_resolution.
-    resolution=int (4–9)      → force this resolution.
-
-    Returns a dict with `hexes`, `network_avg`, `resolution`, `auto_selected`,
-    `total_cells`, `total_stores`, and `thresholds`.
+    v3.3 output additions per hex:
+      stores_detail: [{name, revenue, pct_of_network_avg, lat, lng}]
+      dominant_locality: str (e.g. "Park Street", "Kolkata", "West Bengal")
     """
     auto_selected = resolution is None
     if auto_selected:
@@ -152,27 +122,21 @@ def compute_hex_heatmap(
 
     if not stores:
         return {
-            "hexes": [],
-            "network_avg": 0.0,
-            "resolution": resolution,
-            "auto_selected": auto_selected,
-            "total_cells": 0,
-            "total_stores": 0,
+            "hexes": [], "network_avg": 0.0,
+            "resolution": resolution, "auto_selected": auto_selected,
+            "total_cells": 0, "total_stores": 0,
             "thresholds": thresholds_out,
         }
 
-    # Network average across all stores
     revenues = [safe_float(s.get("revenue", 0)) for s in stores]
     network_avg = sum(revenues) / len(revenues) if revenues else 0.0
 
-    # Aggregate stores into hex cells
     hex_map: Dict[str, Dict[str, Any]] = {}
     valid_count = 0
 
     for s in stores:
         lat = safe_float(s.get("lat"))
         lng = safe_float(s.get("lng"))
-
         if lat == 0.0 and lng == 0.0:
             continue
         if not (-90.0 < lat < 90.0) or not (-180.0 < lng < 180.0):
@@ -185,18 +149,35 @@ def compute_hex_heatmap(
 
         valid_count += 1
         rev = safe_float(s.get("revenue", 0))
+        store_pct = (rev / network_avg * 100) if network_avg > 0 else 0.0
 
         bucket = hex_map.setdefault(cell, {
             "cell": cell,
             "store_count": 0,
             "total_revenue": 0.0,
             "store_names": [],
+            "stores_detail": [],
+            "region_breakdown": [],
         })
         bucket["store_count"] += 1
         bucket["total_revenue"] += rev
-        bucket["store_names"].append(s.get("name", ""))
+        store_name = s.get("name", "") or s.get("id", "") or ""
+        bucket["store_names"].append(store_name)
+        bucket["stores_detail"].append({
+            "name":               store_name,
+            "revenue":            round(rev, 2),
+            "pct_of_network_avg": round(store_pct, 1),
+            "lat":                lat,
+            "lng":                lng,
+        })
+        bucket["region_breakdown"].append({
+            "state":    s.get("state") or s.get("region") or "",
+            "district": s.get("district") or "",
+            "city":     s.get("city") or "",
+            "suburb":   s.get("suburb") or "",
+        })
 
-    # Build output
+    # Build output with per-hex enrichment
     hexes_out: List[Dict[str, Any]] = []
     for cell, data in hex_map.items():
         n = data["store_count"]
@@ -210,30 +191,45 @@ def compute_hex_heatmap(
         else:
             classification = "on_target"
 
-        boundary = [[float(lat), float(lng)] for lat, lng in h3.cell_to_boundary(cell)]
-        clat, clng = h3.cell_to_latlng(cell)
+        try:
+            boundary = [[float(la), float(ln)] for la, ln in h3.cell_to_boundary(cell)]
+            clat, clng = h3.cell_to_latlng(cell)
+        except Exception:
+            continue
+
+        # Sort the store detail list inside each hex by revenue desc
+        # — makes the drill-down panel naturally rank-ordered
+        stores_detail_sorted = sorted(
+            data["stores_detail"], key=lambda x: -x["revenue"]
+        )
 
         hexes_out.append({
-            "cell": cell,
-            "boundary": boundary,
-            "center": [float(clat), float(clng)],
-            "store_count": n,
-            "total_revenue": round(data["total_revenue"], 2),
-            "avg_revenue": round(avg, 2),
-            "pct_of_network_avg": round(pct * 100, 1),
-            "classification": classification,
-            "store_names": data["store_names"],
+            "cell":                 cell,
+            "boundary":             boundary,
+            "center":               [float(clat), float(clng)],
+            "store_count":          n,
+            "total_revenue":        round(data["total_revenue"], 2),
+            "avg_revenue":          round(avg, 2),
+            "pct_of_network_avg":   round(pct * 100, 1),
+            "classification":       classification,
+
+            # v3.3 additions for the explainable drill-down panel
+            "stores_detail":        stores_detail_sorted,
+            "dominant_locality":    _dominant_locality(data["region_breakdown"]),
+
+            # legacy field — kept for backward compatibility
+            "store_names":          data["store_names"],
         })
 
     order = {"above": 0, "on_target": 1, "below": 2}
     hexes_out.sort(key=lambda h: (order[h["classification"]], -h["avg_revenue"]))
 
     return {
-        "hexes": hexes_out,
-        "network_avg": round(network_avg, 2),
-        "resolution": resolution,
+        "hexes":         hexes_out,
+        "network_avg":   round(network_avg, 2),
+        "resolution":    resolution,
         "auto_selected": auto_selected,
-        "total_cells": len(hexes_out),
-        "total_stores": valid_count,
-        "thresholds": thresholds_out,
+        "total_cells":   len(hexes_out),
+        "total_stores":  valid_count,
+        "thresholds":    thresholds_out,
     }

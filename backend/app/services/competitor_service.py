@@ -195,3 +195,35 @@ def get_competitor_density_for_tenant(
 def list_brands_in_db(country: str) -> List[Dict[str, Any]]:
     """Admin/debug: see what's currently in the cache for a country."""
     return list_brands_for_country(country)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Legacy alias for backward compatibility (v3.2 fix)
+# ─────────────────────────────────────────────────────────────────────────────
+# site_discovery_service.py was written against the v3.0 API where this
+# function accepted a list of CompetitorBrand objects. The v3.1 rewrite
+# changed it to accept plain location dicts via aggregate_locations_to_hexes.
+# This alias preserves the old call signature so the older callers keep
+# working without modification.
+
+def aggregate_competitors_to_hexes(competitors, resolution: int = 6):
+    """
+    Legacy API: take a list of CompetitorBrand dataclasses (each with a
+    .locations attribute), flatten to plain locations, and pass through
+    to the v3.1 aggregator.
+    """
+    flat = []
+    for brand in competitors or []:
+        # CompetitorBrand dataclass or dict — handle both
+        if hasattr(brand, "name"):
+            name = brand.name
+            locs = getattr(brand, "locations", []) or []
+        else:
+            name = brand.get("name") if isinstance(brand, dict) else None
+            locs = brand.get("locations", []) if isinstance(brand, dict) else []
+        for loc in locs:
+            entry = dict(loc) if isinstance(loc, dict) else {}
+            if "brand" not in entry and name:
+                entry["brand"] = name
+            flat.append(entry)
+    return aggregate_locations_to_hexes(flat, resolution)
