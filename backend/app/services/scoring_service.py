@@ -25,6 +25,7 @@ from app.models.rf_model import FranchiseModel
 from app.services.amenities_service import count_amenities_near_points
 from app.services.clustering_service import assign_business_units
 from app.services.real_estate_service import load_and_preprocess_real_estate, enrich_with_real_estate
+from app.services.osm_geographic_service import get_roads_and_landuse, enrich_with_geography
 from app.utils import (
     get_logger, haversine_vectorized, nearest_neighbor_index, safe_int, safe_float,
 )
@@ -118,29 +119,40 @@ def run_pipeline(
     if re_path:
         re_gdf = load_and_preprocess_real_estate(re_path)
 
+    # v3.7 — fetch OSM roads & landuse (cached after first run, may take 5-15min initially)
+    try:
+        roads_gdf, landuse_gdf = get_roads_and_landuse(country, state)
+    except Exception as e:
+        log.warning(f"[Pipeline] OSM geographic fetch failed ({e}) - continuing without road/landuse features")
+        roads_gdf = None
+        landuse_gdf = None
+
     # ── 1. Prepare stores ─────────────────────────────────────
     stores_df = _add_adjusted_sales(stores_df)
-    stores_df = _enrich(stores_df, demographics_df, amenities_gdf, re_gdf, stores_df, cfg, is_store=True)
+    stores_df = _enrich(stores_df, demographics_df, amenities_gdf, re_gdf, stores_df, cfg, is_store=True,
+                        roads_gdf=roads_gdf, landuse_gdf=landuse_gdf)
     if has_bu:
         stores_df = assign_business_units(stores_df, bu_df)
 
     # ── 2. Prepare candidates ─────────────────────────────────
     if requests_df is not None and not requests_df.empty:
         cands_df = _enrich(requests_df.copy(), demographics_df, amenities_gdf,
-                           re_gdf, stores_df, cfg, is_store=False)
+                           re_gdf, stores_df, cfg, is_store=False,
+                           roads_gdf=roads_gdf, landuse_gdf=landuse_gdf)
         if has_bu:
             cands_df = assign_business_units(cands_df, bu_df)
     else:
         cands_df = _generate_grid(cfg, demographics_df)
         cands_df = _enrich(cands_df, demographics_df, amenities_gdf,
-                           re_gdf, stores_df, cfg, is_store=False)
+                           re_gdf, stores_df, cfg, is_store=False,
+                           roads_gdf=roads_gdf, landuse_gdf=landuse_gdf)
         if has_bu:
             cands_df = assign_business_units(cands_df, bu_df)
 
     # ── 3. Train RF model + predict ───────────────────────────
     model = FranchiseModel()
     train_metrics = model.train(stores_df, has_bu=has_bu)
-    log.info(f"[Pipeline] Model R²={train_metrics['r2']:.3f}")
+    log.info(f"[Pipeline] Model R²={train_metrics.get('r2_test', 'N/A')}")
     
     # Cap extreme demand values before scoring layer
     if "Population" in cands_df.columns:
@@ -170,7 +182,25 @@ def run_pipeline(
         cands_df["Final_Score"] = cands_df["Adjusted_Final_Score"]
 
     cands_df = cands_df.sort_values("Final_Score", ascending=False).reset_index(drop=True)
-    top_df = cands_df.head(top_n)
+
+    # v3.8.3 - branch based on grid mode (no requests uploaded) vs uploaded mode
+    if requests_df is None or requests_df.empty:
+        # GRID MODE: opinionated filtering / diversity / look-alike snap
+        mio_density = _v382_compute_store_density_profile(stores_df, amenities_gdf, cluster_radius_m=500)
+        log.info(f"[Calibration] Mio store density (500m cluster) - n={mio_density['n_stores']}, median={mio_density['median']:.0f}, p10={mio_density['p10']:.0f}, p25={mio_density['p25']:.0f}, mean={mio_density['mean']:.1f}")
+        min_cluster_threshold = max(5, int(mio_density.get('p10', 10)))
+        log.info(f"[Calibration] using min_cluster_threshold={min_cluster_threshold} (max of 5 floor and Mio p10)")
+
+        viable_df = _filter_viable_candidates(cands_df, min_amenities=5, min_population=1000)
+        diverse_df = _select_diverse_top_picks(viable_df, n=top_n * 3, min_distance_km=15.0)
+        snapped_df = _snap_or_drop_to_dense_cluster(diverse_df, amenities_gdf,
+                                                     min_cluster_size=min_cluster_threshold,
+                                                     cluster_radius_m=500, hex_half_km=3.0)
+        top_df = snapped_df.head(top_n).reset_index(drop=True)
+    else:
+        # UPLOADED MODE: honest scoring of user-supplied locations - no filtering, no snap
+        log.info(f"[Pipeline] Uploaded mode - scoring {len(cands_df)} user-supplied locations as-is (no viability filter, no diversity, no snap)")
+        top_df = cands_df.head(top_n).reset_index(drop=True)
     
     if len(top_df) < top_n:
         log.warning(f"[Pipeline] Only found {len(top_df)} candidates. Requested top {top_n}.")
@@ -314,12 +344,16 @@ def _compute_region_stats(stores_df: pd.DataFrame, cands_df: pd.DataFrame, demog
 # ─────────────────────────────────────────────────────────────
 # FEATURE ENGINEERING
 # ─────────────────────────────────────────────────────────────
-def _enrich(df, demographics_df, amenities_gdf, re_gdf, stores_df, cfg, is_store):
+def _enrich(df, demographics_df, amenities_gdf, re_gdf, stores_df, cfg, is_store,
+            roads_gdf=None, landuse_gdf=None):
     df = count_amenities_near_points(df, amenities_gdf, buffer_m=BUFFER_RADIUS_M)
     df = _map_demographics(df, demographics_df)
     df = _competition_analysis(df, stores_df, is_store=is_store)
     df = enrich_with_real_estate(df, re_gdf)
     df = _cannibalization(df)
+    # v3.7 — geographic features (roads + landuse)
+    if roads_gdf is not None or landuse_gdf is not None:
+        df = enrich_with_geography(df, roads_gdf, landuse_gdf)
     if cfg.get("default_kitchen"):
         ck_lat, ck_lon = cfg["default_kitchen"]
         df["Kitchen_Dist_km"] = haversine_vectorized(
@@ -457,6 +491,13 @@ def _to_records(df, kind: str):
             "property_growth_score": safe_float(row.get("property_growth_score", 0.0)),
             "avg_property_price_3km": safe_float(row.get("avg_property_price_3km", 0.0)),
             "avg_property_price_5km": safe_float(row.get("avg_property_price_5km", 0.0)),
+            # v3.7 — geographic features
+            "dist_to_nearest_road_m": safe_float(row.get("dist_to_nearest_road_m", 99999)),
+            "is_commercial":   safe_int(row.get("is_commercial", 0)),
+            "is_residential":  safe_int(row.get("is_residential", 0)),
+            "is_industrial":   safe_int(row.get("is_industrial", 0)),
+            "is_agricultural": safe_int(row.get("is_agricultural", 0)),
+            "is_natural":      safe_int(row.get("is_natural", 0)),
         }
         records.append(r)
     return records
@@ -512,3 +553,204 @@ def _compute_kpis(stores_df, top_df):
     kpis["top_amenity_corr"] = safe_float(best_corr) if best_corr > -1 else 0
     
     return kpis
+
+
+# =====================================================================
+# v3.8 - Candidate Viability Filter + Spatial Diversity Selection
+# =====================================================================
+import math as _v38_math
+
+_V38_AMENITY_COLS = [
+    "cnt_food", "cnt_retail", "cnt_education", "cnt_health",
+    "cnt_leisure", "cnt_transport", "cnt_finance",
+]
+
+
+def _filter_viable_candidates(df, min_amenities: int = 5, min_population: int = 1000):
+    """Drop unviable candidates (jungles/rivers/empty land) before scoring."""
+    if df is None or len(df) == 0:
+        return df
+    import pandas as _pd
+    present = [c for c in _V38_AMENITY_COLS if c in df.columns]
+    amen_sum = df[present].fillna(0).sum(axis=1) if present else _pd.Series(0, index=df.index)
+    pop = _pd.to_numeric(df.get("Population", 0), errors="coerce").fillna(0)
+    keep = (amen_sum >= min_amenities) & (pop >= min_population)
+    out = df.loc[keep].copy()
+    try:
+        log.info(
+            f"[Viability] {len(df)} candidates -> {len(out)} viable "
+            f"(min_amenities={min_amenities}, min_population={min_population})"
+        )
+    except Exception:
+        pass
+    return out
+
+
+def _v38_haversine_km(lat1, lon1, lat2, lon2):
+    R = 6371.0
+    dlat = _v38_math.radians(lat2 - lat1)
+    dlon = _v38_math.radians(lon2 - lon1)
+    a = (_v38_math.sin(dlat / 2) ** 2
+         + _v38_math.cos(_v38_math.radians(lat1)) * _v38_math.cos(_v38_math.radians(lat2))
+         * _v38_math.sin(dlon / 2) ** 2)
+    return 2 * R * _v38_math.asin(_v38_math.sqrt(a))
+
+
+def _select_diverse_top_picks(scored_df, n: int, min_distance_km: float = 15.0):
+    """Greedy spatial diversity: skip picks within min_distance_km of an existing pick."""
+    if scored_df is None or len(scored_df) == 0 or n <= 0:
+        import pandas as _pd
+        return scored_df.iloc[0:0] if scored_df is not None else _pd.DataFrame()
+    sorted_df = scored_df.sort_values("Final_Score", ascending=False).reset_index(drop=True)
+    if min_distance_km <= 0:
+        return sorted_df.head(n).reset_index(drop=True)
+    picks = []
+    for idx, row in sorted_df.iterrows():
+        if len(picks) >= n:
+            break
+        lat1 = float(row["Latitude"])
+        lon1 = float(row["Longitude"])
+        too_close = False
+        for (_, lat2, lon2) in picks:
+            if _v38_haversine_km(lat1, lon1, lat2, lon2) < min_distance_km:
+                too_close = True
+                break
+        if not too_close:
+            picks.append((idx, lat1, lon1))
+    pick_indices = [p[0] for p in picks]
+    out = sorted_df.loc[pick_indices].reset_index(drop=True)
+    try:
+        log.info(
+            f"[Diversity] requested n={n}, min_distance_km={min_distance_km}, "
+            f"picked={len(out)} from {len(sorted_df)} ranked candidates"
+        )
+    except Exception:
+        pass
+    return out
+
+# =====================================================================
+
+# =====================================================================
+# v3.8.2 - Look-alike matching: snap-or-DROP to dense amenity cluster
+# Threshold is derived from existing stores (p10 of densest 500m cluster)
+# =====================================================================
+
+def _v382_compute_store_density_profile(stores_df, amenities_gdf, cluster_radius_m: int = 500):
+    """For each existing store, count amenities within cluster_radius_m.
+    Returns dict of percentile stats so we can use Mio's worst stores as the floor."""
+    if stores_df is None or len(stores_df) == 0 or amenities_gdf is None or amenities_gdf.empty:
+        return {"n_stores": 0, "median": 0, "p5": 0, "p10": 0, "p25": 0, "mean": 0}
+    try:
+        import numpy as _np
+        deg = cluster_radius_m / 111000.0
+        amen_lats = amenities_gdf.geometry.y.values
+        amen_lons = amenities_gdf.geometry.x.values
+        densities = []
+        for _, store in stores_df.iterrows():
+            try:
+                slat = float(store["Latitude"])
+                slon = float(store["Longitude"])
+            except (TypeError, ValueError, KeyError):
+                continue
+            mask = ((amen_lats >= slat - deg) & (amen_lats <= slat + deg)
+                    & (amen_lons >= slon - deg) & (amen_lons <= slon + deg))
+            count = 0
+            for la, lo in zip(amen_lats[mask], amen_lons[mask]):
+                if _v38_haversine_km(slat, slon, la, lo) * 1000.0 <= cluster_radius_m:
+                    count += 1
+            densities.append(count)
+        if not densities:
+            return {"n_stores": 0, "median": 0, "p5": 0, "p10": 0, "p25": 0, "mean": 0}
+        arr = _np.array(densities)
+        return {
+            "n_stores": int(len(arr)),
+            "mean":   float(arr.mean()),
+            "median": float(_np.median(arr)),
+            "p5":     float(_np.percentile(arr, 5)),
+            "p10":    float(_np.percentile(arr, 10)),
+            "p25":    float(_np.percentile(arr, 25)),
+        }
+    except Exception as e:
+        try:
+            log.warning(f"[Calibration] store density profile failed: {type(e).__name__}: {e}")
+        except Exception:
+            pass
+        return {"n_stores": 0, "median": 0, "p5": 0, "p10": 0, "p25": 0, "mean": 0}
+
+
+def _snap_or_drop_to_dense_cluster(picks_df, amenities_gdf, min_cluster_size: int = 10,
+                                    cluster_radius_m: int = 500, hex_half_km: float = 3.0):
+    """For each pick:
+       1. Find amenities inside the hex (hex_half_km radius)
+       2. Find the amenity that has the most neighbors within cluster_radius_m
+       3. If best_count < min_cluster_size -> DROP the pick
+       4. Else -> SNAP the pick's lat/lng to that anchor amenity
+    """
+    if picks_df is None or len(picks_df) == 0:
+        return picks_df
+    if amenities_gdf is None or amenities_gdf.empty:
+        try:
+            log.warning("[Snap] no amenities_gdf - returning picks unchanged")
+        except Exception:
+            pass
+        return picks_df
+    import pandas as _pd
+    deg = hex_half_km / 111.0
+    amen_lats = amenities_gdf.geometry.y.values
+    amen_lons = amenities_gdf.geometry.x.values
+    kept_rows = []
+    n_dropped = 0
+    n_snapped = 0
+    for _, row in picks_df.iterrows():
+        try:
+            plat = float(row["Latitude"]); plon = float(row["Longitude"])
+        except (TypeError, ValueError, KeyError):
+            continue
+        mask = ((amen_lats >= plat - deg) & (amen_lats <= plat + deg)
+                & (amen_lons >= plon - deg) & (amen_lons <= plon + deg))
+        ax = amen_lats[mask]; ay = amen_lons[mask]
+        if len(ax) == 0:
+            n_dropped += 1
+            try:
+                log.info(f"[Snap] DROP ({plat:.4f},{plon:.4f}) - no amenities in hex")
+            except Exception:
+                pass
+            continue
+        # Find amenity with most neighbors within cluster_radius_m
+        best_count = 0
+        best_lat = plat
+        best_lon = plon
+        for i in range(len(ax)):
+            count = 0
+            for j in range(len(ax)):
+                if i == j:
+                    continue
+                if _v38_haversine_km(ax[i], ay[i], ax[j], ay[j]) * 1000.0 <= cluster_radius_m:
+                    count += 1
+            if count > best_count:
+                best_count = count
+                best_lat = float(ax[i])
+                best_lon = float(ay[i])
+        if best_count < min_cluster_size:
+            n_dropped += 1
+            try:
+                log.info(f"[Snap] DROP ({plat:.4f},{plon:.4f}) - densest cluster only {best_count} amenities (need {min_cluster_size})")
+            except Exception:
+                pass
+            continue
+        new_row = row.copy()
+        new_row["Latitude"] = best_lat
+        new_row["Longitude"] = best_lon
+        kept_rows.append(new_row)
+        n_snapped += 1
+        try:
+            log.info(f"[Snap] SNAP ({plat:.4f},{plon:.4f}) -> ({best_lat:.4f},{best_lon:.4f}) {best_count} amenities in {cluster_radius_m}m")
+        except Exception:
+            pass
+    try:
+        log.info(f"[Snap] {n_snapped} snapped, {n_dropped} dropped (threshold={min_cluster_size})")
+    except Exception:
+        pass
+    if not kept_rows:
+        return picks_df.iloc[0:0]
+    return _pd.DataFrame(kept_rows).reset_index(drop=True)

@@ -20,16 +20,8 @@ const useAppStore = create((set, get) => ({
   // 'site_discovery'      = new market entry, no sales required
   mode: 'network_performance',
   setMode: (mode) => set({ mode }),
-
-  // View Mode (Hex vs District)
   viewMode: 'hex',
   setViewMode: (m) => set({ viewMode: m }),
-
-  // -- v3.5: Map store filter (district / single store) --
-  mapStoreFilter: null,
-  setMapStoreFilter: (f) => set({ mapStoreFilter: f }),
-  clearMapStoreFilter: () => set({ mapStoreFilter: null }),
-  setFlyToCoords: (coords) => set({ flyToCoords: coords }),
 
   // ── Session ──────────────────────────────────────────────────
   sessionId: null,
@@ -38,8 +30,8 @@ const useAppStore = create((set, get) => ({
   // ── Location Selection ───────────────────────────────────────
   country: null,
   currencySymbol: '$',
-  currencyCode:   'USD',
-  state:   null,
+  currencyCode: 'USD',
+  state: null,
   stateConfig: null,
   availableStates: [],
   // v3: category (bakery/confectionery for now)
@@ -81,15 +73,15 @@ const useAppStore = create((set, get) => ({
 
   // ── Map UI State ─────────────────────────────────────────────
   mapLayers: {
-    stores:           true,
-    requests:         true,
-    predictions:      true,
-    businessUnits:    true,
-    amenities:        true,
-    realEstate:       true,
-    hexHeatmap:       true,   // v2: performance heatmap
+    stores: true,
+    requests: true,
+    predictions: true,
+    businessUnits: true,
+    amenities: true,
+    realEstate: true,
+    hexHeatmap: true,   // v2: performance heatmap
     competitorDensity: true,  // v3: competitor hex layer
-    untappedDemand:   true,   // v3: opportunity hex layer
+    untappedDemand: true,   // v3: opportunity hex layer
     peerContextColor: false,  // v3: recolor stores by peer comparison (toggle)
   },
   toggleLayer: (layer) =>
@@ -197,3 +189,4 @@ const useAppStore = create((set, get) => ({
 }));
 
 export default useAppStore;
+
