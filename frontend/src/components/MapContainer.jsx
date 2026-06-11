@@ -1,9 +1,8 @@
 import React, { useMemo, useEffect } from 'react';
-import { MapContainer, TileLayer, CircleMarker, Marker, Polygon, Popup, Tooltip, ZoomControl, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, CircleMarker, Marker, Popup, Tooltip, ZoomControl, useMap } from 'react-leaflet';
 import MarkerClusterGroup from 'react-leaflet-cluster';
 import L from 'leaflet';
 import useAppStore from '../store/useAppStore';
-import HexHeatmapLayer from './HexHeatmapLayer';
 
 // ─── FlyTo on store/prediction selection ──────────────────────
 function FlyToLocation() {
@@ -54,101 +53,48 @@ const storeMarkerIcon = (classification) => {
   });
 };
 
-// ─── Score → colour ───────────────────────────────────────────
-const predictionColor = (score, maxScore) => {
-  if (maxScore <= 0) return '#94a3b8';
-  const pct = score / maxScore;
-  if (pct >= 0.7) return '#22C55E';
-  if (pct >= 0.4) return '#F59E0B';
-  return '#EF4444';
+// ─── Rank-based prediction marker icon ────────────────────────
+// #1 = gold, #2 = silver, #3 = bronze, #4-10 = brand purple
+const rankMarkerIcon = (rank) => {
+  const bgColor =
+    rank === 1 ? '#D4AF37' :        // gold
+      rank === 2 ? '#A8A8A8' :        // silver
+        rank === 3 ? '#B87333' :        // bronze
+          '#6C4CF1';                       // brand purple for #4-#10
+
+  const size = rank <= 3 ? 36 : 30;
+  const fontSize = rank <= 3 ? 15 : 13;
+
+  return L.divIcon({
+    html: `<div style="
+      width:${size}px;height:${size}px;border-radius:50%;
+      background:${bgColor};
+      border:3px solid white;
+      display:flex;align-items:center;justify-content:center;
+      color:white;font-weight:800;font-family:Inter,sans-serif;
+      font-size:${fontSize}px;line-height:1;
+      box-shadow:0 3px 8px rgba(0,0,0,0.35);
+    ">#${rank}</div>`,
+    className: 'fiq-rank-marker',
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    popupAnchor: [0, -size / 2 + 2],
+  });
 };
-const scoreSize = (s) => 8 + (s / 100) * 14;
 
-// ─── Hex classification → colour ──────────────────────────────
-// Matches existing design tokens for visual consistency.
-const HEX_COLORS = {
-  above: '#22C55E',  // success
-  on_target: '#F59E0B',  // warning / amber
-  below: '#EF4444',  // danger
-};
-const HEX_LABELS = {
-  above: 'Above network avg',
-  on_target: 'On target',
-  below: 'Below network avg',
-};
+const rankColor = (rank) =>
+  rank === 1 ? '#D4AF37' :
+    rank === 2 ? '#A8A8A8' :
+      rank === 3 ? '#B87333' :
+        '#6C4CF1';
 
-// ─── Hex tooltip card ─────────────────────────────────────────
-function HexInfoCard({ hex, networkAvg, currencySymbol, country }) {
-  const cur = (val) => {
-    if (val == null) return '—';
-    if (country === 'India') {
-      if (val >= 10000000) return `${currencySymbol}${(val / 10000000).toFixed(2)} Cr`;
-      if (val >= 100000) return `${currencySymbol}${(val / 100000).toFixed(1)} L`;
-      return `${currencySymbol}${val.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
-    }
-    if (val >= 1000000) return `${currencySymbol}${(val / 1000000).toFixed(2)} M`;
-    if (val >= 1000) return `${currencySymbol}${(val / 1000).toFixed(1)} K`;
-    return `${currencySymbol}${val.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
-  };
+const rankLabel = (rank) =>
+  rank === 1 ? '🏆 Top Pick' :
+    rank === 2 ? '🥈 #2 Pick' :
+      rank === 3 ? '🥉 #3 Pick' :
+        `#${rank} Pick`;
 
-  const color = HEX_COLORS[hex.classification];
-  const label = HEX_LABELS[hex.classification];
-
-  return (
-    <div style={{ fontFamily: 'Inter,system-ui,sans-serif', width: 240, padding: 0 }}>
-      <div style={{
-        background: `linear-gradient(135deg, ${color}, ${color}dd)`,
-        padding: '10px 14px',
-        borderRadius: '12px 12px 0 0',
-      }}>
-        <div style={{
-          fontSize: 9, color: 'rgba(255,255,255,0.85)', fontWeight: 700,
-          textTransform: 'uppercase', letterSpacing: '0.08em',
-        }}>
-          Performance Zone · {label}
-        </div>
-        <div style={{
-          fontSize: 22, fontWeight: 800, color: '#fff', marginTop: 4,
-          fontVariantNumeric: 'tabular-nums', lineHeight: 1.1,
-        }}>
-          {hex.pct_of_network_avg.toFixed(1)}%
-        </div>
-        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.8)', marginTop: 2 }}>
-          of network average
-        </div>
-      </div>
-      <div style={{ padding: '10px 14px', background: '#fff', borderRadius: '0 0 12px 12px', fontSize: 12 }}>
-        {[
-          ['Stores in zone', hex.store_count],
-          ['Zone avg revenue', cur(hex.avg_revenue)],
-          ['Network avg', cur(networkAvg)],
-          ['Total revenue', cur(hex.total_revenue)],
-        ].map(([lbl, val]) => (
-          <div key={lbl} style={{
-            display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
-            padding: '4px 0', borderBottom: '1px solid #F3F4F6', fontSize: 11,
-          }}>
-            <span style={{ color: '#6B7280' }}>{lbl}</span>
-            <span style={{ fontWeight: 700, color: '#111827' }}>{val}</span>
-          </div>
-        ))}
-        {hex.store_names && hex.store_names.length > 0 && (
-          <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid #F3F4F6' }}>
-            <div style={{ fontSize: 9, fontWeight: 700, color: '#9CA3AF', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>
-              Stores
-            </div>
-            <div style={{ fontSize: 10, color: '#6B7280', lineHeight: 1.5 }}>
-              {hex.store_names.slice(0, 4).join(' · ')}
-              {hex.store_names.length > 4 && ` · +${hex.store_names.length - 4} more`}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─── Light-theme popup card (existing — unchanged) ────────────
+// ─── Light-theme popup card (unchanged) ────────────────────────
 function InfoCard({ d, avgSales }) {
   const { currencySymbol, country } = useAppStore();
 
@@ -253,17 +199,6 @@ function InfoCard({ d, avgSales }) {
   );
 }
 
-const getAmenityEmoji = (type) => {
-  if (['restaurant', 'fast_food'].includes(type)) return '🍽️';
-  if (type === 'cafe') return '☕';
-  if (type === 'supermarket') return '🛒';
-  if (['mall', 'department_store'].includes(type)) return '🏬';
-  if (type === 'school') return '🏫';
-  if (['college', 'university'].includes(type)) return '🎓';
-  if (['hospital', 'clinic', 'pharmacy'].includes(type)) return '🏥';
-  return '📍';
-};
-
 // v3.5.4: Amenity category styles (colored border + emoji)
 const getAmenityStyle = (type) => {
   if (['hospital', 'clinic', 'pharmacy'].includes(type))
@@ -298,18 +233,17 @@ const amenityIcon = (type) => {
 export default function MapContainer_() {
   const {
     results, stateConfig, mapLayers, storeFilter, selectedRegion,
-    currencySymbol, country, hexHeatmap, mapStoreFilter,
+    currencySymbol, country, mapStoreFilter,
   } = useAppStore();
   const center = stateConfig?.center || [20, 78];
   const zoom = stateConfig?.zoom || 6;
 
-  const { stores, requests, predictions, business_units, amenities, real_estate, avgSales, maxPredScore } = useMemo(() => {
+  const { stores, requests, predictions, business_units, amenities, real_estate, avgSales } = useMemo(() => {
     const allStores = results?.stores || [];
     const allPreds = results?.top_picks || [];
 
     const totalSales = allStores.reduce((sum, s) => sum + (s.revenue || 0), 0);
     const avg = allStores.length > 0 ? totalSales / allStores.length : 0;
-    const maxS = allPreds.reduce((mx, p) => Math.max(mx, p.score || 0), 0);
 
     let filteredStores = allStores;
     let filteredRequests = results?.requests || [];
@@ -332,7 +266,6 @@ export default function MapContainer_() {
       amenities: results?.amenities || [],
       real_estate: results?.real_estate || [],
       avgSales: avg,
-      maxPredScore: maxS,
     };
   }, [results, storeFilter, selectedRegion, mapStoreFilter]);
 
@@ -362,45 +295,6 @@ export default function MapContainer_() {
         maxZoom={19}
       />
 
-      {/* ── HEX HEATMAP (rendered FIRST so pins/markers draw on top) ───────
-          Each polygon is an H3 cell aggregating stores inside it, coloured
-          by performance vs network avg. */}
-      {mapLayers.hexHeatmap && hexHeatmap?.hexes?.length > 0 && hexHeatmap.hexes.map((hex) => {
-        const color = HEX_COLORS[hex.classification];
-        return (
-          <Polygon
-            key={`hex-${hex.cell}`}
-            positions={hex.boundary}
-            pathOptions={{
-              color,
-              fillColor: color,
-              fillOpacity: 0.32,
-              weight: 1.2,
-              opacity: 0.85,
-            }}
-          >
-            <Tooltip sticky direction="top" offset={[0, -8]}>
-              <div style={{ fontFamily: 'Inter', minWidth: 140 }}>
-                <div style={{ fontWeight: 800, fontSize: 12, color }}>
-                  {HEX_LABELS[hex.classification]} · {hex.pct_of_network_avg.toFixed(0)}%
-                </div>
-                <div style={{ fontSize: 10, color: '#6B7280', marginTop: 2 }}>
-                  {hex.store_count} store{hex.store_count !== 1 ? 's' : ''} in this zone
-                </div>
-              </div>
-            </Tooltip>
-            <Popup maxWidth={260}>
-              <HexInfoCard
-                hex={hex}
-                networkAvg={hexHeatmap.network_avg}
-                currencySymbol={currencySymbol}
-                country={country}
-              />
-            </Popup>
-          </Polygon>
-        );
-      })}
-
       {/* ── Amenities (clustered) ──────────────── */}
       {(mapLayers.amenities ?? true) && amenities.length > 0 && (
         <MarkerClusterGroup chunkedLoading maxClusterRadius={50}>
@@ -416,18 +310,18 @@ export default function MapContainer_() {
         </MarkerClusterGroup>
       )}
 
-      {/* ── Existing Stores (slim dots, 3-state) ────────────────────── */}
+      {/* ── Existing Stores (3-state by performance) ──────────────── */}
       {mapLayers.stores && stores.length > 0 && stores.map((d, i) => {
         const ratio = avgSales > 0 ? d.revenue / avgSales : 1;
         const classification =
           ratio >= 1.10 ? 'above' :
-          ratio <= 0.90 ? 'below' : 'on_target';
+            ratio <= 0.90 ? 'below' : 'on_target';
         const color =
           classification === 'above' ? '#22C55E' :
-          classification === 'below' ? '#EF4444' : '#F59E0B';
+            classification === 'below' ? '#EF4444' : '#F59E0B';
         const label =
           classification === 'above' ? 'Above network avg' :
-          classification === 'below' ? 'Below network avg' : 'On target';
+            classification === 'below' ? 'Below network avg' : 'On target';
         return (
           <Marker key={`store-${i}`} position={[d.lat, d.lng]} icon={storeMarkerIcon(classification)}>
             <Popup maxWidth={300}><InfoCard d={d} avgSales={avgSales} /></Popup>
@@ -455,29 +349,29 @@ export default function MapContainer_() {
         </MarkerClusterGroup>
       )}
 
-      {/* ── Predictions (scored circles) ─────── */}
+      {/* ── Predictions (rank-based numbered markers) ─────── */}
       {mapLayers.predictions && predictions.map((d, i) => {
-        const pColor = predictionColor(d.score, maxPredScore);
-        const radius = scoreSize(d.score);
+        const rank = i + 1;
+        const color = rankColor(rank);
         return (
-          <React.Fragment key={`pred-${i}`}>
-            <CircleMarker center={[d.lat, d.lng]} radius={radius + 7}
-              pathOptions={{ color: pColor, fillColor: pColor, fillOpacity: 0.1, weight: 1.5, opacity: 0.35 }}
-            />
-            <CircleMarker center={[d.lat, d.lng]} radius={radius}
-              pathOptions={{ color: pColor, fillColor: pColor, fillOpacity: 0.82, weight: 2 }}
-            >
-              <Popup maxWidth={300}><InfoCard d={d} avgSales={avgSales} /></Popup>
-              <Tooltip sticky direction="top">
-                <div style={{ fontFamily: 'Inter', minWidth: 120 }}>
-                  <div style={{ fontWeight: 800, fontSize: 13, color: pColor }}>
-                    #{i + 1} {i === 0 ? '🏆' : '⭐'} {d.score?.toFixed(1)}/100
-                  </div>
-                  <div style={{ fontSize: 11, color: '#6B7280', marginTop: 2 }}>{d.name}</div>
+          <Marker
+            key={`pred-${i}`}
+            position={[d.lat, d.lng]}
+            icon={rankMarkerIcon(rank)}
+            zIndexOffset={rank <= 3 ? 1000 : 500}
+          >
+            <Popup maxWidth={300}><InfoCard d={d} avgSales={avgSales} /></Popup>
+            <Tooltip sticky direction="top">
+              <div style={{ fontFamily: 'Inter', minWidth: 130 }}>
+                <div style={{ fontWeight: 800, fontSize: 13, color }}>
+                  {rankLabel(rank)}
                 </div>
-              </Tooltip>
-            </CircleMarker>
-          </React.Fragment>
+                <div style={{ fontSize: 11, color: '#6B7280', marginTop: 2 }}>
+                  Score {d.score?.toFixed(1)}/100 · {d.name}
+                </div>
+              </div>
+            </Tooltip>
+          </Marker>
         );
       })}
 

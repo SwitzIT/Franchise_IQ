@@ -5,14 +5,12 @@ import {
   Store, Activity, FileText, Star, Building2, Sparkles,
   MapPin, Bell, ChevronDown, ChevronUp, Search, Trophy,
   Layers, Eye, EyeOff, TrendingUp, TrendingDown, Filter,
-  Maximize2, Minimize2, X, Menu, Hexagon, Zap
+  Maximize2, Minimize2, X, Menu
 } from 'lucide-react';
 import useAppStore from '../store/useAppStore';
 import AppSidebar from '../components/Sidebar';
 import KPICard from '../components/KPICard';
 import OpportunityPanel from '../components/OpportunityPanel';
-import ChatPanel from '../components/ChatPanel';
-import { getHexHeatmap } from '../services/api';
 import DistrictPerformancePanel from '../components/DistrictPerformancePanel';
 
 const LazyMap = React.lazy(() => import('../components/MapContainer'));
@@ -146,61 +144,6 @@ function FilterDropdown({ icon: Icon, label, items, selectedName, onSelect, plac
   );
 }
 
-// ─── Resolution selector (inline in legend) ────────────────────
-// Shows current resolution + tiny dropdown to override or revert to auto.
-function HexResolutionControl() {
-  const {
-    hexHeatmap, hexResolutionOverride, setHexResolutionOverride,
-  } = useAppStore();
-
-  if (!hexHeatmap) return null;
-
-  const current = hexHeatmap.resolution;
-  const isAuto = hexHeatmap.auto_selected && hexResolutionOverride == null;
-  const totalCells = hexHeatmap.total_cells;
-
-  // H3 resolutions 4-9 with human-readable scales
-  const options = [
-    { value: null, label: 'Auto', hint: 'Adapts to your data' },
-    { value: 4, label: 'Res 4', hint: 'Country (~1,770 km²)' },
-    { value: 5, label: 'Res 5', hint: 'Large region (~252 km²)' },
-    { value: 6, label: 'Res 6', hint: 'State / district (~36 km²)' },
-    { value: 7, label: 'Res 7', hint: 'City (~5 km²)' },
-    { value: 8, label: 'Res 8', hint: 'Neighbourhood (~0.7 km²)' },
-    { value: 9, label: 'Res 9', hint: 'Street block (~0.1 km²)' },
-  ];
-
-  return (
-    <div className="mt-2 pt-2 border-t border-border flex items-center justify-between gap-2">
-      <div className="flex items-center gap-1.5 text-[10px]">
-        <Zap size={9} className={isAuto ? 'text-primary' : 'text-ink-subtle'} />
-        <span className="text-ink-subtle">
-          {isAuto ? (
-            <>Auto · <span className="font-semibold text-ink">res {current}</span> · {totalCells} zones</>
-          ) : (
-            <>Manual · <span className="font-semibold text-ink">res {current}</span> · {totalCells} zones</>
-          )}
-        </span>
-      </div>
-      <select
-        value={hexResolutionOverride ?? ''}
-        onChange={(e) => {
-          const v = e.target.value;
-          setHexResolutionOverride(v === '' ? null : Number(v));
-        }}
-        className="text-[10px] bg-surface border border-border rounded px-1.5 py-0.5 text-ink focus:outline-none focus:border-primary/40"
-        title="Override hex resolution"
-      >
-        {options.map(opt => (
-          <option key={opt.value ?? 'auto'} value={opt.value ?? ''}>
-            {opt.label}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-}
-
 // ─── Map Legend ────────────────────────────────────────────────
 function MapLegend() {
   const [open, setOpen] = useState(true);
@@ -221,12 +164,12 @@ function MapLegend() {
               </button>
             </div>
 
-            {/* Zone Performance section — top because it's the primary visual */}
+            {/* Store Performance section — colour of existing store markers */}
             <div className="mb-2.5 pb-2.5 border-b border-border">
               <div className="flex items-center gap-1.5 mb-1.5">
-                <Hexagon size={10} className="text-ink-subtle" />
+                <Store size={10} className="text-ink-subtle" />
                 <span className="text-[9px] font-semibold text-ink-subtle uppercase tracking-wider">
-                  Zone Performance
+                  Store Performance
                 </span>
               </div>
               <div className="space-y-1">
@@ -241,9 +184,6 @@ function MapLegend() {
                   </div>
                 ))}
               </div>
-
-              {/* Resolution control — adapts per dataset */}
-              <HexResolutionControl />
             </div>
 
             {/* Pins section */}
@@ -255,9 +195,9 @@ function MapLegend() {
                 {[
                   { color: '#3B82F6', label: 'Existing Stores' },
                   { color: '#8B5CF6', label: 'Franchise Requests' },
-                  { color: '#22C55E', label: 'High Opportunity' },
-                  { color: '#F59E0B', label: 'Med. Opportunity' },
-                  { color: '#EF4444', label: 'Low Opportunity' },
+                  { color: '#D4AF37', label: '#1 Top Pick' },
+                  { color: '#A8A8A8', label: '#2-3 Top Picks' },
+                  { color: '#6C4CF1', label: '#4-10 Top Picks' },
                 ].map(({ color, label }) => (
                   <div key={label} className="flex items-center gap-2 text-ink-muted">
                     <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: color }} />
@@ -324,7 +264,6 @@ export default function DashboardPage() {
     results, regionKpis, selectedRegion, setSelectedRegion,
     country, state, currencySymbol, selectedStoreName, flyToStore,
     hasBU, storeFilter, setStoreFilter,
-    sessionId, hexResolutionOverride, setHexHeatmap, setHexLoading,
     setMobileSidebarOpen,
   } = useAppStore();
 
@@ -348,26 +287,6 @@ export default function DashboardPage() {
       useAppStore.setState({ flyToCoords: { lat: pred.lat, lng: pred.lng, zoom: 15 } });
     }
   };
-
-  // ── Fetch hex heatmap on results-load and on resolution override change ──
-  // Passing `null` to getHexHeatmap → backend auto-picks resolution.
-  // Passing a number → caller forces that resolution.
-  useEffect(() => {
-    if (!sessionId || !results || stores.length === 0) {
-      setHexHeatmap(null);
-      return;
-    }
-    let cancelled = false;
-    setHexLoading(true);
-    getHexHeatmap(sessionId, hexResolutionOverride)
-      .then((data) => { if (!cancelled) setHexHeatmap(data); })
-      .catch((err) => {
-        console.error('Hex heatmap fetch failed:', err);
-        if (!cancelled) setHexHeatmap(null);
-      })
-      .finally(() => { if (!cancelled) setHexLoading(false); });
-    return () => { cancelled = true; };
-  }, [sessionId, results, hexResolutionOverride, stores.length, setHexHeatmap, setHexLoading]);
 
   const cur = (val) => {
     if (val == null) return '—';
@@ -618,7 +537,7 @@ export default function DashboardPage() {
       )}
 
       <DistrictPerformancePanel />
-      {results && <ChatPanel />}
+
     </div>
   );
 }

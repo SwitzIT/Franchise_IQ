@@ -14,7 +14,7 @@ import { getDownloadUrl } from '../services/api';
 
 const LAYERS = [
 
-  { key: 'hexHeatmap', label: 'Performance Heatmap', color: '#10B981', icon: Hexagon, hint: 'Area-level revenue vs network avg' },
+  // { key: 'hexHeatmap', label: 'Performance Heatmap', color: '#10B981', icon: Hexagon, hint: 'Area-level revenue vs network avg' },
 
   { key: 'stores', label: 'Existing Stores', color: '#3B82F6' },
 

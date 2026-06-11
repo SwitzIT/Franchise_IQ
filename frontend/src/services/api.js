@@ -192,8 +192,19 @@ export const analyseTerritory = async (sessionId, country, territory, resolution
 // ── Download ─────────────────────────────────────────────────────────
 export const getDownloadUrl = (session_id) =>
   `${BASE}/api/download_results?session_id=${session_id}`;
-export const getDistrictPerformance = async (sessionId) => {
-  const { data } = await api.get('/district-performance', { params: { session_id: sessionId } });
-  return data;
-};
 
+// ── v3.4: District View ───────────────────────────────────────────── 
+export const getDistrictPerformance = async (sessionId) => { const { data } = await api.get('/district-performance', { params: { session_id: sessionId }, }); return data; };
+
+export async function sendChatMessage(messages, sessionId) {
+  const res = await fetch(`${API_BASE}/api/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messages, session_id: sessionId || null }),
+  });
+  if (!res.ok) {
+    throw new Error(`Chat request failed: ${res.status}`);
+  }
+  const data = await res.json();
+  return data.reply;
+}
